@@ -13,6 +13,17 @@ const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Serve Agora SDK locally to avoid CDN issues
+const agoraSdkCandidates = [
+  path.join(__dirname, 'node_modules', 'agora-rtc-sdk-ng'),
+  path.join(__dirname, 'node_modules', 'agora-rtc-sdk-ng', 'dist'),
+];
+for (const sdkPath of agoraSdkCandidates) {
+  if (fs.existsSync(sdkPath)) {
+    app.use('/vendor', express.static(sdkPath));
+  }
+}
+
 // Active recording sessions
 const sessions = new Map();
 
