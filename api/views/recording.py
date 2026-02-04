@@ -55,7 +55,7 @@ def recording_start(request):
         "receiverId": data.get("receiver_id"),
     }
 
-    return recorder_service_post("start", payload)
+    return recorder_service_post("start", payload, allow_conflict_ok=True)
 
 
 @csrf_exempt
