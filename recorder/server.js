@@ -9,6 +9,53 @@ const admin = require('firebase-admin');
 
 const execAsync = promisify(exec);
 
+// Basic file logging (stdout + file)
+const LOG_FILE = process.env.RECORDER_LOG_FILE || '/app/logs/recorder.log';
+try {
+  fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
+} catch (err) {
+  // If log dir fails, fall back to stdout only.
+  console.error('Failed to create log directory:', err.message);
+}
+const logStream = fs.createWriteStream(LOG_FILE, { flags: 'a' });
+const formatEtTimestamp = (date) => {
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second} ET`;
+};
+
+const _log = (level, args) => {
+  const ts = formatEtTimestamp(new Date());
+  const line = `[${ts}] [${level}] ${args.join(' ')}\n`;
+  try {
+    logStream.write(line);
+  } catch (_) {
+    // ignore file write errors
+  }
+};
+['log', 'info', 'warn', 'error'].forEach((level) => {
+  const original = console[level].bind(console);
+  console[level] = (...args) => {
+    _log(level.toUpperCase(), args.map(a => (typeof a === 'string' ? a : JSON.stringify(a))));
+    original(...args);
+  };
+});
+process.on('uncaughtException', (err) => {
+  console.error('uncaughtException:', err && err.stack ? err.stack : err);
+});
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection:', err && err.stack ? err.stack : err);
+});
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -157,18 +204,12 @@ async function uploadToFirebase(filepath, metadata) {
   }
 }
 
-// Parse channel name to extract group and user IDs
-// Expected format: {groupId}_{user1}_{user2}
-function parseChannelName(channel) {
-  const match = channel.match(/^([^_]+)_([^_]+)_([^_]+)$/);
-  if (match) {
-    return {
-      groupId: match[1],
-      user1: match[2],
-      user2: match[3]
-    };
+function buildRecordingFilename({ groupId, callerId, receiverId, fallbackChannel }) {
+  const timestamp = formatEtTimestamp(new Date()).replace(/[: ]/g, '-');
+  if (groupId && callerId && receiverId) {
+    return `${groupId}_${callerId}_${receiverId}_${timestamp}.webm`;
   }
-  return { groupId: null, user1: null, user2: null };
+  return `${fallbackChannel}_${timestamp}.webm`;
 }
 
 // Convert WebM to WAV (AI-optimized: 16kHz, mono, 16-bit PCM)
@@ -191,7 +232,7 @@ app.get('/health', (req, res) => {
 
 // Start recording
 app.post('/start', async (req, res) => {
-  const { channel, token, uid, callerId, targetId } = req.body;
+  const { channel, token, uid, callerId, receiverId, groupId } = req.body;
 
   if (!channel) {
     return res.status(400).json({ error: 'missing_channel' });
@@ -214,12 +255,12 @@ app.post('/start', async (req, res) => {
   const sid = uuidv4();
   const recordingUid = uid || Math.floor(Math.random() * 100000) + 900000;
   
-  // Parse channel name: {groupId}_{user1}_{user2}
-  const parsed = parseChannelName(channel);
-  
-  // Generate filename: {channel}_{timestamp}.webm
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const filename = `${channel}_${timestamp}.webm`;
+  const filename = buildRecordingFilename({
+    groupId,
+    callerId,
+    receiverId,
+    fallbackChannel: channel,
+  });
   const filepath = path.join(RECORDINGS_DIR, filename);
 
   try {

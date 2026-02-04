@@ -1,7 +1,9 @@
 # Environment
 .env
 *.env.local
-.env.production
+.env.dev
+.env.emulator
+firebase/*.json
 
 # Python
 __pycache__/

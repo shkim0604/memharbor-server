@@ -1,6 +1,8 @@
 import asyncio
 from datetime import datetime
 
+from django.utils import timezone
+
 from .constants import DEFAULT_TOKEN_EXPIRE_SECONDS, MAX_TOKEN_EXPIRE_SECONDS, ROLE_PUBLISHER, ROLE_SUBSCRIBER
 
 
@@ -38,17 +40,18 @@ def run_async(coro):
     return loop.run_until_complete(coro)
 
 
-def generate_channel_name(group_id: str, caller_id: str, receiver_id: str) -> str:
-    """Generate channel name: {groupId}_{callerId}_{receiverId}_{timestamp}."""
-    timestamp = int(datetime.utcnow().timestamp() * 1000)  # milliseconds
-    return f"{group_id}_{caller_id}_{receiver_id}_{timestamp}"
+def generate_channel_name(call_id: str) -> str:
+    """Use callId as the channel name to keep it short and stable."""
+    return call_id
 
 
 def normalize_datetime(value):
     if value is None:
         return None
     if hasattr(value, "timestamp"):
-        return datetime.fromtimestamp(value.timestamp())
+        return datetime.fromtimestamp(value.timestamp(), tz=timezone.get_current_timezone())
     if isinstance(value, datetime):
-        return value
+        if timezone.is_naive(value):
+            return timezone.make_aware(value, timezone.get_current_timezone())
+        return timezone.localtime(value)
     return None

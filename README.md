@@ -315,7 +315,13 @@ Base URL: `https://memory-harbor.delight-house.org`
 
 ## 환경 변수
 
-`.env` 파일에 설정:
+환경을 분리해서 관리합니다:
+- 개발: `.env.dev`
+- 에뮬레이터: `.env.emulator`
+
+아래 템플릿을 복사해서 사용하세요:
+- `.env.dev.example` → `.env.dev`
+- `.env.emulator.example` → `.env.emulator`
 
 ```env
 # Agora (필수)
@@ -326,18 +332,16 @@ AGORA_APP_CERT=your_app_cert
 MEMHARBOR_SECRET_KEY=your-secret-key
 MEMHARBOR_DEBUG=0
 
-# Firebase
+# Firebase (Dev)
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_STORAGE_BUCKET=your-project-id.appspot.com
-
-# === 개발 환경 (에뮬레이터) ===
-FIREBASE_USE_EMULATOR=true
-FIRESTORE_EMULATOR_HOST=localhost:8080
-FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199
-
-# === 프로덕션 ===
-# FIREBASE_USE_EMULATOR=false
+FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
 # FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
+
+# Firebase (Emulator)
+# FIREBASE_USE_EMULATOR=true
+# FIRESTORE_EMULATOR_HOST=localhost:8080
+# FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199
 
 # Recorder 서비스
 RECORDER_SERVICE_URL=http://recorder:3100
@@ -397,7 +401,7 @@ memharbor_server/
 │   ├── api.log            # API 요청 로그
 │   └── django.log         # Django 전체 로그
 ├── recordings/            # 녹음 파일 (개발용)
-├── docker-compose.prod.yml # 프로덕션용 (현재 사용)
+├── docker-compose.dev.yml # 개발용 (현재 사용)
 ├── Dockerfile             # Django 이미지
 └── nginx.conf             # Nginx 설정
 ```
@@ -486,13 +490,13 @@ python manage.py runserver 0.0.0.0:8001
 firebase emulators:start
 
 # 2. Docker 컨테이너 실행
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.dev.yml -f docker-compose.emu.yml up -d --build
 
 # 로그 확인
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.dev.yml -f docker-compose.emu.yml logs -f
 
 # 중지
-docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.dev.yml -f docker-compose.emu.yml down
 ```
 
 - Django: `http://localhost:8001`
@@ -500,20 +504,20 @@ docker-compose -f docker-compose.prod.yml down
 - 녹음 파일: `./recordings/`
 - API 로그: `./logs/api.log`
 
-### 3. 프로덕션 환경 (Docker)
+### 3. 개발 환경 (Docker)
 
 ```bash
 # 빌드 및 실행
-docker-compose -f docker-compose.prod.yml up -d --build
+docker-compose -f docker-compose.dev.yml up -d --build
 
 # 로그 확인
-docker-compose -f docker-compose.prod.yml logs -f
+docker-compose -f docker-compose.dev.yml logs -f
 
 # 특정 서비스 로그
-docker-compose -f docker-compose.prod.yml logs -f recorder
+docker-compose -f docker-compose.dev.yml logs -f recorder
 
 # 중지
-docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.dev.yml down
 ```
 
 - 외부 접속: `https://memory-harbor.delight-house.org`

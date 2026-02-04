@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 
 from ..constants import MISSED_TIMEOUT_SECONDS
 from ..firebase_service import firestore_service
@@ -24,7 +25,7 @@ def _schedule_missed_timeout(call_id: str, timeout_seconds: int = MISSED_TIMEOUT
             call_record = firestore_service.get_call_record(call_id)
             if not call_record or call_record.get("status") != "pending":
                 return
-            firestore_service.update_call_status(call_id, "missed", endedAt=datetime.utcnow())
+            firestore_service.update_call_status(call_id, "missed", endedAt=timezone.now())
         finally:
             with _missed_timers_lock:
                 _missed_timers.pop(call_id, None)
@@ -83,7 +84,7 @@ def call_invite(request):
         }, status=503)
 
     call_id = str(uuid.uuid4())
-    channel_name = generate_channel_name(group_id, caller_id, receiver_id)
+    channel_name = generate_channel_name(call_id)
 
     call_record = firestore_service.create_call_record(
         call_id=call_id,
@@ -195,9 +196,9 @@ def call_answer(request):
     new_status = "accepted" if action == "accept" else "declined"
     update_kwargs = {}
     if action == "accept":
-        update_kwargs["answeredAt"] = datetime.utcnow()
+        update_kwargs["answeredAt"] = timezone.now()
     else:
-        update_kwargs["endedAt"] = datetime.utcnow()
+        update_kwargs["endedAt"] = timezone.now()
 
     updated = firestore_service.update_call_status(call_id, new_status, **update_kwargs)
 
@@ -248,7 +249,7 @@ def call_cancel(request):
             "currentStatus": call_record.get("status"),
         }, status=409)
 
-    updated = firestore_service.update_call_status(call_id, "cancelled", endedAt=datetime.utcnow())
+    updated = firestore_service.update_call_status(call_id, "cancelled", endedAt=timezone.now())
 
     if not updated:
         return JsonResponse({"error": "failed_to_update_status"}, status=500)
@@ -305,7 +306,7 @@ def call_missed(request):
             "currentStatus": call_record.get("status"),
         }, status=409)
 
-    updated = firestore_service.update_call_status(call_id, "missed", endedAt=datetime.utcnow())
+    updated = firestore_service.update_call_status(call_id, "missed", endedAt=timezone.now())
     if not updated:
         return JsonResponse({"error": "failed_to_update_status"}, status=500)
 
@@ -338,7 +339,7 @@ def call_timeout_sweep(request):
     except (TypeError, ValueError):
         return JsonResponse({"error": "invalid_timeout_seconds"}, status=400)
 
-    cutoff = datetime.utcnow() - timedelta(seconds=timeout_seconds)
+    cutoff = timezone.now() - timedelta(seconds=timeout_seconds)
     updated_count = firestore_service.mark_missed_expired(cutoff)
 
     return JsonResponse({
@@ -378,7 +379,7 @@ def call_end(request):
             "currentStatus": call_record.get("status"),
         }, status=409)
 
-    ended_at = datetime.utcnow()
+    ended_at = timezone.now()
 
     answered_at = normalize_datetime(call_record.get("answeredAt"))
     created_at = normalize_datetime(call_record.get("createdAt"))
@@ -427,9 +428,12 @@ def call_status(request, call_id):
         if ts is None:
             return None
         if hasattr(ts, "isoformat"):
-            return ts.isoformat()
+            if timezone.is_naive(ts):
+                ts = timezone.make_aware(ts, timezone.get_current_timezone())
+            return timezone.localtime(ts).isoformat()
         if hasattr(ts, "timestamp"):
-            return datetime.fromtimestamp(ts.timestamp()).isoformat()
+            dt = datetime.fromtimestamp(ts.timestamp(), tz=timezone.get_current_timezone())
+            return dt.isoformat()
         return str(ts)
 
     return JsonResponse({

@@ -5,15 +5,15 @@ services:
       dockerfile: Dockerfile
     command: gunicorn --chdir /app config.wsgi:application --bind 0.0.0.0:8001
     env_file:
-      - .env
+      - .env.dev
     environment:
       - RECORDER_SERVICE_URL=http://recorder:3100
-      # Firebase emulator hosts - use host.docker.internal for accessing host machine
-      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8080
+      - TZ=America/New_York
     expose:
       - "8001"
     volumes:
       - ./logs:/app/logs
+      - ./firebase:/app/firebase:ro
     depends_on:
       - recorder
     restart: unless-stopped
@@ -23,16 +23,16 @@ services:
       context: ./recorder
       dockerfile: Dockerfile
     env_file:
-      - .env
+      - .env.dev
     environment:
       - RECORDER_PORT=3100
       - RECORDINGS_DIR=/app/recordings
-      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8081
-      - FIREBASE_STORAGE_EMULATOR_HOST=host.docker.internal:9198
+      - TZ=America/New_York
     expose:
       - "3100"
     volumes:
       - ./recordings:/app/recordings
+      - ./logs:/app/logs
     restart: unless-stopped
 
   nginx:

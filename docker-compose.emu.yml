@@ -1,0 +1,16 @@
+services:
+  memharbor_server:
+    env_file:
+      - .env.emulator
+    environment:
+      - FIREBASE_USE_EMULATOR=true
+      # Firebase emulator hosts - use host.docker.internal for accessing host machine
+      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8080
+
+  recorder:
+    env_file:
+      - .env.emulator
+    environment:
+      - FIREBASE_USE_EMULATOR=true
+      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8081
+      - FIREBASE_STORAGE_EMULATOR_HOST=host.docker.internal:9198

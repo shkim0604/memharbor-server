@@ -9,6 +9,7 @@ import os
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime
+from django.utils import timezone
 
 logger = logging.getLogger("api")
 
@@ -233,7 +234,7 @@ class FirestoreService:
             return None
         
         try:
-            now = datetime.utcnow()
+            now = timezone.now()
             call_data = {
                 "callId": call_id,
                 "channelName": channel_name,
@@ -346,7 +347,7 @@ class FirestoreService:
             doc_ref.update({
                 "pushSent": push_sent,
                 "pushPlatform": push_platform,
-                "updatedAt": datetime.utcnow(),
+                "updatedAt": timezone.now(),
             })
             return True
         except Exception as e:
@@ -376,7 +377,7 @@ class FirestoreService:
             for doc in docs:
                 batch.update(doc.reference, {
                     "status": "missed",
-                    "endedAt": datetime.utcnow(),
+                    "endedAt": timezone.now(),
                 })
             batch.commit()
             return len(docs)

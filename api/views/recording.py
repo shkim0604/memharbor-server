@@ -50,6 +50,9 @@ def recording_start(request):
         "channel": channel,
         "token": token,
         "uid": data.get("uid"),
+        "groupId": data.get("group_id"),
+        "callerId": data.get("caller_id"),
+        "receiverId": data.get("receiver_id"),
     }
 
     return recorder_service_post("start", payload)
