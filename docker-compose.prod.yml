@@ -8,10 +8,11 @@ services:
       - .env
     environment:
       - RECORDER_SERVICE_URL=http://recorder:3100
+      # Firebase emulator hosts - use host.docker.internal for accessing host machine
+      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8080
     expose:
       - "8001"
     volumes:
-      - memharbor_data:/app/db.sqlite3
       - ./logs:/app/logs
     depends_on:
       - recorder
@@ -26,6 +27,8 @@ services:
     environment:
       - RECORDER_PORT=3100
       - RECORDINGS_DIR=/app/recordings
+      - FIRESTORE_EMULATOR_HOST=host.docker.internal:8081
+      - FIREBASE_STORAGE_EMULATOR_HOST=host.docker.internal:9198
     expose:
       - "3100"
     volumes:
@@ -49,5 +52,4 @@ services:
       - TUNNEL_TOKEN=eyJhIjoiYTY5MDU0OTAxNDNiYTdmNDU4MzQxNWIzMjYzMmM1NjQiLCJ0IjoiY2IwNWZiMDgtYzFkNy00M2Q5LWFmMjktZWM3ZGYzOGJiNGUwIiwicyI6Ik56RXlZelkwTTJVdE5HUmhZeTAwTkRFMExXSmtOV1F0WmpCbE5HVTVZbVV4TXpsayJ9
     restart: unless-stopped
 
-volumes:
-  memharbor_data:
+# App data is stored in Firebase Firestore (no local DB needed)

@@ -23,6 +23,8 @@
     let audioContext = null;
     let audioDestination = null;
     let connectedSources = new Map();
+    let hadRemoteAudio = false;
+    let autoStopTriggered = false;
 
     window.recorderReady = false;
 
@@ -52,7 +54,9 @@
               const source = audioContext.createMediaStreamSource(mediaStream);
               source.connect(audioDestination);
               connectedSources.set(user.uid, source);
+              hadRemoteAudio = true;
               console.log(`[${SID}] Connected audio from user ${user.uid}`);
+              maybeAutoStop();
             }
           }
         });
@@ -65,6 +69,7 @@
             if (source) {
               source.disconnect();
               connectedSources.delete(user.uid);
+              maybeAutoStop();
             }
           }
         });
@@ -75,6 +80,7 @@
           if (source) {
             source.disconnect();
             connectedSources.delete(user.uid);
+            maybeAutoStop();
           }
         });
 
@@ -112,6 +118,22 @@
 
       mediaRecorder.start(1000); // Collect data every 1 second
       console.log(`[${SID}] MediaRecorder started`);
+    }
+
+    function maybeAutoStop() {
+      if (!hadRemoteAudio) return;
+      if (autoStopTriggered) return;
+      if (connectedSources.size > 0) return;
+
+      autoStopTriggered = true;
+      console.log(`[${SID}] No remote users remaining. Auto-stopping...`);
+      fetch('/stop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sid: SID })
+      }).catch(err => {
+        console.error(`[${SID}] Auto-stop failed:`, err);
+      });
     }
 
     window.stopRecording = async function() {

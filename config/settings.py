@@ -68,6 +68,8 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 
+# Django still needs a database for admin/sessions, but we don't use it for app data
+# All app data (calls, users) is stored in Firebase Firestore
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
