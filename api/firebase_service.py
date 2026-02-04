@@ -256,6 +256,7 @@ class FirestoreService:
                 "aiSummary": "",
                 "reviewCount": 0,
                 "lastReviewAt": None,
+                "pushSent": False,
             }
             
             doc_ref = self.db.collection(self.CALLS_COLLECTION).document(call_id)
@@ -266,6 +267,45 @@ class FirestoreService:
             
         except Exception as e:
             logger.error(f"Error creating call record: {e}")
+            return None
+
+    def reserve_push_send(self, call_id: str):
+        """
+        Attempt to reserve push send for a call (idempotency guard).
+        Returns:
+            True if reserved now,
+            False if already reserved/sent,
+            None on error.
+        """
+        if not self.db:
+            return None
+
+        try:
+            from firebase_admin import firestore as fb_firestore
+        except Exception as e:
+            logger.error(f"Failed to import firestore for transaction: {e}")
+            return None
+
+        try:
+            doc_ref = self.db.collection(self.CALLS_COLLECTION).document(call_id)
+
+            @fb_firestore.transactional
+            def _txn(transaction):
+                snapshot = doc_ref.get(transaction=transaction)
+                if not snapshot.exists:
+                    return None
+                data = snapshot.to_dict() or {}
+                if data.get("pushSent"):
+                    return False
+                transaction.update(doc_ref, {
+                    "pushSent": True,
+                    "pushReservedAt": timezone.now(),
+                })
+                return True
+
+            return _txn(self.db.transaction())
+        except Exception as e:
+            logger.error(f"Error reserving push send: {e}")
             return None
     
     def get_call_record(self, call_id: str) -> Optional[Dict[str, Any]]:

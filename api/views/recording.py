@@ -84,7 +84,7 @@ def recording_stop(request):
     if channel:
         payload["channel"] = channel
 
-    return recorder_service_post("stop", payload)
+    return recorder_service_post("stop", payload, allow_not_found_ok=True)
 
 
 @csrf_exempt

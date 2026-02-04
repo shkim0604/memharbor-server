@@ -118,6 +118,18 @@ if (useEmulator) {
   } catch (error) {
     console.error('Firebase initialization failed:', error.message);
   }
+} else if (process.env.FIREBASE_SERVICE_ACCOUNT_PATH && fs.existsSync(process.env.FIREBASE_SERVICE_ACCOUNT_PATH)) {
+  try {
+    const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT_PATH);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      storageBucket: FIREBASE_STORAGE_BUCKET
+    });
+    firebaseInitialized = true;
+    console.log('Firebase Admin initialized from path');
+  } catch (error) {
+    console.error('Firebase initialization failed:', error.message);
+  }
 } else if (fs.existsSync(path.join(__dirname, 'firebase-service-account.json'))) {
   try {
     const serviceAccount = require('./firebase-service-account.json');
@@ -132,75 +144,25 @@ if (useEmulator) {
   }
 }
 
-// Upload to Firebase Storage and save metadata to Firestore
-async function uploadToFirebase(filepath, metadata) {
+async function updateCallRecording(callId, payload) {
   if (!firebaseInitialized) {
-    console.log('Firebase not initialized, skipping upload');
-    return null;
+    console.log('Firebase not initialized, skipping Firestore update');
+    return false;
   }
 
   try {
-    const bucket = admin.storage().bucket();
-    const filename = path.basename(filepath);
-    const destination = `recordings/${filename}`;
-
-    // Upload file
-    await bucket.upload(filepath, {
-      destination,
-      metadata: {
-        contentType: 'audio/wav',
-        metadata: {
-          channel: metadata.channel,
-          groupId: metadata.groupId || '',
-          user1: metadata.user1 || '',
-          user2: metadata.user2 || '',
-          duration: String(metadata.duration),
-          recordedAt: metadata.recordedAt
-        }
-      }
-    });
-
-    // Get download URL (valid for long time)
-    const file = bucket.file(destination);
-    const [url] = await file.getSignedUrl({
-      action: 'read',
-      expires: '2099-12-31'
-    });
-
-    console.log(`Uploaded to Firebase: ${destination}`);
-
-    // Save metadata to Firestore
     const db = admin.firestore();
-    const docRef = await db.collection('recordings').add({
-      filename,
-      url,
-      channel: metadata.channel,
-      groupId: metadata.groupId || null,
-      user1: metadata.user1 || null,
-      user2: metadata.user2 || null,
-      duration: metadata.duration,
-      fileSize: metadata.fileSize,
-      format: 'wav',
-      spec: {
-        sampleRate: 16000,
-        channels: 1,
-        bitDepth: 16
-      },
-      recordedAt: admin.firestore.Timestamp.fromDate(new Date(metadata.recordedAt)),
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    console.log(`Saved to Firestore: ${docRef.id}`);
-
-    return {
-      url,
-      firestoreId: docRef.id,
-      storagePath: destination
-    };
-
+    await db.collection('calls').doc(callId).set({
+      recordingFilename: payload.filename,
+      recordingFormat: payload.format,
+      recordingDurationMs: payload.duration,
+      recordingSavedAt: admin.firestore.FieldValue.serverTimestamp(),
+    }, { merge: true });
+    console.log(`Saved recording filename to calls/${callId}`);
+    return true;
   } catch (error) {
-    console.error('Firebase upload failed:', error.message);
-    return null;
+    console.error('Firestore update failed:', error.message);
+    return false;
   }
 }
 
@@ -383,18 +345,12 @@ app.post('/stop', async (req, res) => {
     const finalFilepath = wavFilepath || session.filepath;
     const finalFilename = wavFilename || session.filename;
 
-    // Upload to Firebase
-    let firebase = null;
     if (finalFilepath && fs.existsSync(finalFilepath)) {
-      const stat = fs.statSync(finalFilepath);
-      firebase = await uploadToFirebase(finalFilepath, {
-        channel: session.channel,
-        groupId: session.groupId,
-        user1: session.user1,
-        user2: session.user2,
+      await updateCallRecording(session.channel, {
+        filename: finalFilename,
+        format: wavFilename ? 'wav' : 'webm',
+        filepath: finalFilepath,
         duration,
-        fileSize: stat.size,
-        recordedAt: session.startedAt
       });
     }
 
@@ -414,7 +370,6 @@ app.post('/stop', async (req, res) => {
         codec: 'pcm_s16le'
       } : null,
       duration,
-      firebase,
       status: 'stopped'
     });
 

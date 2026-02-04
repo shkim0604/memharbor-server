@@ -33,6 +33,7 @@ services:
     volumes:
       - ./recordings:/app/recordings
       - ./logs:/app/logs
+      - ./firebase:/app/firebase:ro
     restart: unless-stopped
 
   nginx:

@@ -117,24 +117,31 @@ def call_invite(request):
         fcm_token = user_tokens.get("fcmToken")
         voip_token = user_tokens.get("voipToken")
 
-        result = run_async(push_service.send_incoming_call_push(
-            platform=platform,
-            fcm_token=fcm_token,
-            voip_token=voip_token,
-            call_id=call_id,
-            channel_name=channel_name,
-            caller_name=caller_name,
-            group_id=group_id,
-            receiver_id=receiver_id,
-            caller_id=caller_id,
-        ))
-
-        if result.success:
+        reserve = firestore_service.reserve_push_send(call_id)
+        if reserve is False:
             push_sent = True
-            push_platform = result.platform
+            push_error = "already_sent"
+            logger.info(f"[CALL/INVITE] Push already reserved for call={call_id}")
         else:
-            push_error = result.error
-            logger.warning(f"[CALL/INVITE] Push failed: {result.error}")
+            result = run_async(push_service.send_incoming_call_push(
+                platform=platform,
+                fcm_token=fcm_token,
+                voip_token=voip_token,
+                call_id=call_id,
+                channel_name=channel_name,
+                caller_name=caller_name,
+                group_id=group_id,
+                receiver_id=receiver_id,
+                caller_id=caller_id,
+            ))
+
+            if result.success:
+                push_sent = True
+                push_platform = result.platform
+                firestore_service.update_push_status(call_id, True, result.platform)
+            else:
+                push_error = result.error
+                logger.warning(f"[CALL/INVITE] Push failed: {result.error}")
     else:
         if user_tokens is None:
             push_error = "firestore_error"
