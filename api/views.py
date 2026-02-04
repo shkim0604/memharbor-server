@@ -1,19 +1,24 @@
 import json
+import logging
 import os
 import time
 from typing import Tuple
 
 import requests
-from requests.auth import HTTPBasicAuth
 from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
 from agora_token_builder import RtcTokenBuilder
+
+logger = logging.getLogger("api")
 
 DEFAULT_TOKEN_EXPIRE_SECONDS = 86400
 MAX_TOKEN_EXPIRE_SECONDS = 86400
 
 ROLE_PUBLISHER = 1
 ROLE_SUBSCRIBER = 2
+
+# Local recording service URL
+RECORDER_SERVICE_URL = os.environ.get("RECORDER_SERVICE_URL", "http://localhost:3100")
 
 
 def _json_body(request) -> Tuple[dict, JsonResponse]:
@@ -58,31 +63,25 @@ def _clamp_expire(expire):
     return min(expire, MAX_TOKEN_EXPIRE_SECONDS)
 
 
-def _agora_base_url():
-    return os.environ.get("AGORA_CLOUD_RECORDING_BASE_URL", "https://api.sd-rtn.com")
-
-
-def _agora_auth():
-    return HTTPBasicAuth(
-        os.environ.get("AGORA_CUSTOMER_ID", ""),
-        os.environ.get("AGORA_CUSTOMER_SECRET", ""),
-    )
-
-
-def _agora_post(path: str, payload: dict):
-    url = f"{_agora_base_url().rstrip('/')}{path}"
-    response = requests.post(
-        url,
-        json=payload,
-        auth=_agora_auth(),
-        headers={"Content-Type": "application/json"},
-        timeout=15,
-    )
+def _recorder_service_post(endpoint: str, payload: dict):
+    """Call local recording service"""
+    url = f"{RECORDER_SERVICE_URL.rstrip('/')}/{endpoint}"
     try:
-        body = response.json()
-    except ValueError:
-        body = {"raw": response.text}
-    return JsonResponse(body, status=response.status_code)
+        response = requests.post(
+            url,
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
+        try:
+            body = response.json()
+        except ValueError:
+            body = {"raw": response.text}
+        return JsonResponse(body, status=response.status_code)
+    except requests.exceptions.ConnectionError:
+        return JsonResponse({"error": "recorder_service_unavailable"}, status=503)
+    except requests.exceptions.Timeout:
+        return JsonResponse({"error": "recorder_service_timeout"}, status=504)
 
 
 @csrf_exempt
@@ -94,7 +93,10 @@ def health(request):
 
 @csrf_exempt
 def token(request):
+    logger.info(f"[TOKEN] {request.method} from {request.META.get('REMOTE_ADDR')}")
+    
     if request.method != "POST":
+        logger.warning(f"[TOKEN] Method not allowed: {request.method}")
         return HttpResponseNotAllowed(["POST"])
 
     missing_env = _require_env("AGORA_APP_ID", "AGORA_APP_CERT")
@@ -103,10 +105,14 @@ def token(request):
 
     data, error = _json_body(request)
     if error:
+        logger.error(f"[TOKEN] Invalid JSON body")
         return error
+
+    logger.info(f"[TOKEN] Request data: {data}")
 
     channel = data.get("channel") or data.get("cname")
     if not channel:
+        logger.error(f"[TOKEN] Missing channel")
         return JsonResponse({"error": "missing_channel"}, status=400)
 
     uid = data.get("uid")
@@ -137,6 +143,7 @@ def token(request):
             app_id, app_cert, channel, uid_int, role, expire_ts
         )
 
+    logger.info(f"[TOKEN] Success: channel={channel}, uid={uid or user_account}")
     return JsonResponse({
         "token": token_value,
         "expire_at": expire_ts,
@@ -145,39 +152,14 @@ def token(request):
 
 
 @csrf_exempt
-def recording_acquire(request):
-    if request.method != "POST":
-        return HttpResponseNotAllowed(["POST"])
-
-    missing_env = _require_env("AGORA_APP_ID", "AGORA_CUSTOMER_ID", "AGORA_CUSTOMER_SECRET")
-    if missing_env:
-        return missing_env
-
-    data, error = _json_body(request)
-    if error:
-        return error
-
-    cname = data.get("cname") or data.get("channel")
-    uid = data.get("uid")
-    if not cname or uid is None:
-        return JsonResponse({"error": "missing_cname_or_uid"}, status=400)
-
-    payload = {
-        "cname": str(cname),
-        "uid": str(uid),
-        "clientRequest": data.get("clientRequest", {}),
-    }
-
-    app_id = os.environ.get("AGORA_APP_ID")
-    return _agora_post(f"/v1/apps/{app_id}/cloud_recording/acquire", payload)
-
-
-@csrf_exempt
 def recording_start(request):
+    """Start local recording - server joins channel and records audio"""
+    logger.info(f"[RECORDING/START] {request.method} from {request.META.get('REMOTE_ADDR')}")
+    
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
-    missing_env = _require_env("AGORA_APP_ID", "AGORA_CUSTOMER_ID", "AGORA_CUSTOMER_SECRET")
+    missing_env = _require_env("AGORA_APP_ID")
     if missing_env:
         return missing_env
 
@@ -185,56 +167,88 @@ def recording_start(request):
     if error:
         return error
 
-    resource_id = data.get("resourceId") or data.get("resource_id")
-    mode = data.get("mode", "individual")
-    cname = data.get("cname") or data.get("channel")
-    uid = data.get("uid")
-    client_request = data.get("clientRequest")
+    channel = data.get("cname") or data.get("channel")
+    if not channel:
+        return JsonResponse({"error": "missing_channel"}, status=400)
 
-    if not resource_id or not cname or uid is None:
-        return JsonResponse({"error": "missing_resource_cname_uid"}, status=400)
-    if not client_request:
-        return JsonResponse({"error": "missing_clientRequest"}, status=400)
+    # Generate token for recorder bot (optional, for token-secured apps)
+    token = data.get("token")
+    if not token:
+        # Auto-generate token for recorder
+        app_id = os.environ.get("AGORA_APP_ID")
+        app_cert = os.environ.get("AGORA_APP_CERT")
+        if app_cert:
+            recorder_uid = data.get("uid", 999999)
+            expire_ts = int(time.time()) + 86400
+            token = RtcTokenBuilder.buildTokenWithUid(
+                app_id, app_cert, channel, recorder_uid, ROLE_SUBSCRIBER, expire_ts
+            )
 
     payload = {
-        "cname": str(cname),
-        "uid": str(uid),
-        "clientRequest": client_request,
+        "channel": channel,
+        "token": token,
+        "uid": data.get("uid"),
     }
 
-    app_id = os.environ.get("AGORA_APP_ID")
-    path = f"/v1/apps/{app_id}/cloud_recording/resourceid/{resource_id}/mode/{mode}/start"
-    return _agora_post(path, payload)
+    return _recorder_service_post("start", payload)
 
 
 @csrf_exempt
 def recording_stop(request):
+    """Stop local recording"""
+    logger.info(f"[RECORDING/STOP] {request.method} from {request.META.get('REMOTE_ADDR')}")
+    
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
-
-    missing_env = _require_env("AGORA_APP_ID", "AGORA_CUSTOMER_ID", "AGORA_CUSTOMER_SECRET")
-    if missing_env:
-        return missing_env
 
     data, error = _json_body(request)
     if error:
         return error
 
-    resource_id = data.get("resourceId") or data.get("resource_id")
+    logger.info(f"[RECORDING/STOP] Request data: {data}")
+
     sid = data.get("sid")
-    mode = data.get("mode", "individual")
-    cname = data.get("cname") or data.get("channel")
-    uid = data.get("uid")
+    channel = data.get("cname") or data.get("channel")
 
-    if not resource_id or not sid or not cname or uid is None:
-        return JsonResponse({"error": "missing_resource_sid_cname_uid"}, status=400)
+    if not sid and not channel:
+        return JsonResponse({"error": "missing_sid_or_channel"}, status=400)
 
-    payload = {
-        "cname": str(cname),
-        "uid": str(uid),
-        "clientRequest": data.get("clientRequest", {}),
-    }
+    payload = {}
+    if sid:
+        payload["sid"] = sid
+    if channel:
+        payload["channel"] = channel
 
-    app_id = os.environ.get("AGORA_APP_ID")
-    path = f"/v1/apps/{app_id}/cloud_recording/resourceid/{resource_id}/sid/{sid}/mode/{mode}/stop"
-    return _agora_post(path, payload)
+    return _recorder_service_post("stop", payload)
+
+
+@csrf_exempt
+def recording_status(request):
+    """Get recording status / list active sessions"""
+    if request.method != "GET":
+        return HttpResponseNotAllowed(["GET"])
+
+    try:
+        response = requests.get(
+            f"{RECORDER_SERVICE_URL}/sessions",
+            timeout=10,
+        )
+        return JsonResponse(response.json(), status=response.status_code)
+    except requests.exceptions.ConnectionError:
+        return JsonResponse({"error": "recorder_service_unavailable"}, status=503)
+
+
+@csrf_exempt
+def recording_list(request):
+    """List saved recordings"""
+    if request.method != "GET":
+        return HttpResponseNotAllowed(["GET"])
+
+    try:
+        response = requests.get(
+            f"{RECORDER_SERVICE_URL}/recordings",
+            timeout=10,
+        )
+        return JsonResponse(response.json(), status=response.status_code)
+    except requests.exceptions.ConnectionError:
+        return JsonResponse({"error": "recorder_service_unavailable"}, status=503)

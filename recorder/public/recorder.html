@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Agora Recorder</title>
+  <script src="https://cdn.jsdelivr.net/npm/agora-rtc-sdk-ng@4.20.0/AgoraRTC_N.min.js"></script>
+</head>
+<body>
+  <div id="remote-players"></div>
+  <script>
+    // Parse URL params
+    const params = new URLSearchParams(window.location.search);
+    const APP_ID = params.get('appId');
+    const CHANNEL = params.get('channel');
+    const TOKEN = params.get('token') || null;
+    const UID = parseInt(params.get('uid')) || 0;
+    const SID = params.get('sid');
+
+    // Globals
+    let client = null;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let audioContext = null;
+    let audioDestination = null;
+    let connectedSources = new Map();
+
+    window.recorderReady = false;
+
+    async function init() {
+      try {
+        console.log(`[${SID}] Initializing recorder for channel: ${CHANNEL}`);
+
+        // Create client in audience mode (receive only)
+        client = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' });
+
+        // Setup audio context for mixing
+        audioContext = new AudioContext();
+        audioDestination = audioContext.createMediaStreamDestination();
+
+        // Event handlers
+        client.on('user-published', async (user, mediaType) => {
+          console.log(`[${SID}] User ${user.uid} published ${mediaType}`);
+          
+          await client.subscribe(user, mediaType);
+          console.log(`[${SID}] Subscribed to user ${user.uid} ${mediaType}`);
+
+          if (mediaType === 'audio') {
+            // Get audio track and connect to mixer
+            const audioTrack = user.audioTrack;
+            if (audioTrack) {
+              const mediaStream = new MediaStream([audioTrack.getMediaStreamTrack()]);
+              const source = audioContext.createMediaStreamSource(mediaStream);
+              source.connect(audioDestination);
+              connectedSources.set(user.uid, source);
+              console.log(`[${SID}] Connected audio from user ${user.uid}`);
+            }
+          }
+        });
+
+        client.on('user-unpublished', (user, mediaType) => {
+          console.log(`[${SID}] User ${user.uid} unpublished ${mediaType}`);
+          
+          if (mediaType === 'audio') {
+            const source = connectedSources.get(user.uid);
+            if (source) {
+              source.disconnect();
+              connectedSources.delete(user.uid);
+            }
+          }
+        });
+
+        client.on('user-left', (user) => {
+          console.log(`[${SID}] User ${user.uid} left`);
+          const source = connectedSources.get(user.uid);
+          if (source) {
+            source.disconnect();
+            connectedSources.delete(user.uid);
+          }
+        });
+
+        // Join channel
+        const uid = await client.join(APP_ID, CHANNEL, TOKEN, UID);
+        console.log(`[${SID}] Joined channel as UID: ${uid}`);
+
+        // Start recording the mixed audio
+        startMediaRecorder();
+
+        window.recorderReady = true;
+        console.log(`[${SID}] Recorder ready`);
+
+      } catch (error) {
+        console.error(`[${SID}] Init error:`, error);
+        window.recorderReady = false;
+      }
+    }
+
+    function startMediaRecorder() {
+      const stream = audioDestination.stream;
+      
+      const options = {
+        mimeType: 'audio/webm;codecs=opus',
+        audioBitsPerSecond: 128000
+      };
+
+      mediaRecorder = new MediaRecorder(stream, options);
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          recordedChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.start(1000); // Collect data every 1 second
+      console.log(`[${SID}] MediaRecorder started`);
+    }
+
+    window.stopRecording = async function() {
+      return new Promise((resolve) => {
+        if (!mediaRecorder || mediaRecorder.state === 'inactive') {
+          resolve(null);
+          return;
+        }
+
+        mediaRecorder.onstop = async () => {
+          console.log(`[${SID}] MediaRecorder stopped, processing...`);
+          
+          // Leave channel
+          if (client) {
+            await client.leave();
+            console.log(`[${SID}] Left channel`);
+          }
+
+          // Close audio context
+          if (audioContext) {
+            await audioContext.close();
+          }
+
+          // Convert to base64
+          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64 = reader.result.split(',')[1];
+            resolve(base64);
+          };
+          reader.readAsDataURL(blob);
+        };
+
+        mediaRecorder.stop();
+      });
+    };
+
+    // Start
+    init();
+  </script>
+</body>
+</html>

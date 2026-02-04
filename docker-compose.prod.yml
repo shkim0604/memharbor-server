@@ -6,10 +6,30 @@ services:
     command: gunicorn --chdir /app config.wsgi:application --bind 0.0.0.0:8001
     env_file:
       - .env
+    environment:
+      - RECORDER_SERVICE_URL=http://recorder:3100
     expose:
       - "8001"
     volumes:
       - memharbor_data:/app/db.sqlite3
+      - ./logs:/app/logs
+    depends_on:
+      - recorder
+    restart: unless-stopped
+
+  recorder:
+    build:
+      context: ./recorder
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - RECORDER_PORT=3100
+      - RECORDINGS_DIR=/app/recordings
+    expose:
+      - "3100"
+    volumes:
+      - recordings_data:/app/recordings
     restart: unless-stopped
 
   nginx:
@@ -26,8 +46,9 @@ services:
     image: cloudflare/cloudflared:latest
     command: tunnel run
     environment:
-      - TUNNEL_TOKEN=eyJhIjoiYTY5MDU0OTAxNDNiYTdmNDU4MzQxNWIzMjYzMmM1NjQiLCJ0IjoiY2IwNWZiMDgtYzFkNy00M2Q5LWFmMjktZWM3ZGYzOGJiNGUwIiwicyI6Ik9UUXpZak14TWpndFpERXlaUzAwT0RnekxUazBNRFV0TmpnM00ySTBNREF5WXpreiJ9
+      - TUNNEL_TOKEN=eyJhIjoiYTY5MDU0OTAxNDNiYTdmNDU4MzQxNWIzMjYzMmM1NjQiLCJ0IjoiY2IwNWZiMDgtYzFkNy00M2Q5LWFmMjktZWM3ZGYzOGJiNGUwIiwicyI6Ik56RXlZelkwTTJVdE5HUmhZeTAwTkRFMExXSmtOV1F0WmpCbE5HVTVZbVV4TXpsayJ9
     restart: unless-stopped
 
 volumes:
   memharbor_data:
+  recordings_data:
