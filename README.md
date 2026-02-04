@@ -373,8 +373,19 @@ FCM_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
 ```
 memharbor_server/
 ├── api/                    # Django API 앱
-│   ├── views.py           # API 엔드포인트
-│   └── urls.py            # URL 라우팅
+│   ├── views/             # API 엔드포인트 모듈
+│   │   ├── __init__.py
+│   │   ├── health.py
+│   │   ├── token.py
+│   │   ├── recording.py
+│   │   └── calls.py
+│   ├── urls.py            # URL 라우팅
+│   ├── constants.py       # API 상수 모음
+│   ├── http.py            # 공통 HTTP 유틸
+│   ├── recording_client.py # 녹음 서비스 호출
+│   └── utils.py           # 공통 유틸
+│   ├── firebase_service.py # Firestore 연동 서비스
+│   └── push_service.py    # 푸시 알림 서비스 (APNs, FCM)
 ├── config/                 # Django 설정
 │   └── settings.py        # 로깅 설정 포함
 ├── recorder/              # 녹음 서비스 (Node.js)
