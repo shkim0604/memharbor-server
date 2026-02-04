@@ -61,7 +61,7 @@ Base URL: `https://memory-harbor.delight-house.org`
 ```
 
 - 채널명 형식: `{groupId}_{user1}_{user2}`
-- 파일명: `{channel}_{timestamp}.wav`
+- 파일명(시작 시): `{channel}_{timestamp}.webm`
 
 **응답:**
 ```json
@@ -107,6 +107,7 @@ Base URL: `https://memory-harbor.delight-house.org`
   "status": "stopped"
 }
 ```
+> 변환 실패 시 `format`은 `webm`, `filename`은 `.webm` 유지됨. Firebase 설정이 없으면 `firebase`는 `null`.
 
 ---
 
@@ -135,6 +136,13 @@ FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199
 # === 프로덕션 ===
 # FIREBASE_USE_EMULATOR=false
 # FIREBASE_SERVICE_ACCOUNT={"type":"service_account",...}
+
+# Recorder 서비스
+RECORDER_SERVICE_URL=http://recorder:3100
+RECORDER_PORT=3100
+RECORDINGS_DIR=/app/recordings
+# Puppeteer 실행 경로 (Docker에서 필요할 수 있음)
+# PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 ```
 
 ---
@@ -153,12 +161,11 @@ memharbor_server/
 │   ├── server.js          # Express 서버
 │   └── public/
 │       └── recorder.html  # Agora 채널 참여 + 녹음
-├── logs/                   # 로그 파일
+├── logs/                   # 로그 파일 (로컬/도커 마운트)
 │   ├── api.log            # API 요청 로그
 │   └── django.log         # Django 전체 로그
 ├── recordings/            # 녹음 파일 (개발용)
-├── docker-compose.yml      # 개발용
-├── docker-compose.prod.yml # 프로덕션용
+├── docker-compose.prod.yml # 프로덕션용 (현재 사용)
 ├── Dockerfile             # Django 이미지
 └── nginx.conf             # Nginx 설정
 ```
@@ -185,13 +192,13 @@ python manage.py runserver 0.0.0.0:8001
 firebase emulators:start
 
 # 2. Docker 컨테이너 실행
-docker-compose up -d --build
+docker-compose -f docker-compose.prod.yml up -d --build
 
 # 로그 확인
-docker-compose logs -f
+docker-compose -f docker-compose.prod.yml logs -f
 
 # 중지
-docker-compose down
+docker-compose -f docker-compose.prod.yml down
 ```
 
 - Django: `http://localhost:8001`
@@ -259,7 +266,7 @@ docker logs -f memharbor_server-recorder-1
     ↓
 [Cloudflare Tunnel] (memory-harbor.delight-house.org)
     ↓
-[Nginx] (:80)
+[Nginx] (:80, 호스트 8001 매핑)
     ↓
 [Django/Gunicorn] (:8001) → logs/api.log
     ↓
