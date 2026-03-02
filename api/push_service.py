@@ -23,6 +23,13 @@ class PushResult:
     error_code: Optional[str] = None
 
 
+def _token_fingerprint(token: Optional[str]) -> str:
+    if not token:
+        return "missing"
+    tail = token[-6:] if len(token) >= 6 else token
+    return f"len={len(token)},tail={tail}"
+
+
 class APNsVoIPService:
     """
     Apple Push Notification service for VoIP pushes.
@@ -101,15 +108,25 @@ class APNsVoIPService:
         
         # VoIP push uses .voip suffix on bundle ID
         topic = f"{self.bundle_id}.voip"
-        
+
+        expiration = str(int(time.time()) + 10)
         headers = {
             "authorization": f"bearer {self._generate_token()}",
             "apns-topic": topic,
             "apns-push-type": "voip",
             "apns-priority": "10",  # High priority for VoIP
-            "apns-expiration": "0",  # Immediate delivery only
+            "apns-expiration": expiration,
             "apns-collapse-id": call_id,
         }
+        logger.info(
+            "[APNs] VoIP push send start: call_id=%s host=%s topic=%s expiration=%s token=%s payload_keys=%s",
+            call_id,
+            host,
+            topic,
+            expiration,
+            _token_fingerprint(device_token),
+            sorted(payload.keys()),
+        )
         
         try:
             async with httpx.AsyncClient(http2=True) as client:
@@ -122,7 +139,11 @@ class APNsVoIPService:
                 
                 if response.status_code == 200:
                     apns_id = response.headers.get("apns-id")
-                    logger.info(f"[APNs] VoIP push sent successfully: {apns_id}")
+                    logger.info(
+                        "[APNs] VoIP push sent successfully: apns_id=%s status=%s",
+                        apns_id,
+                        response.status_code,
+                    )
                     return PushResult(
                         success=True,
                         platform="ios",
@@ -135,7 +156,12 @@ class APNsVoIPService:
                     except:
                         reason = response.text or "Unknown error"
                     
-                    logger.error(f"[APNs] Push failed: {response.status_code} - {reason}")
+                    logger.error(
+                        "[APNs] Push failed: status=%s reason=%s apns_id=%s",
+                        response.status_code,
+                        reason,
+                        response.headers.get("apns-id"),
+                    )
                     return PushResult(
                         success=False,
                         platform="ios",
@@ -334,7 +360,8 @@ class PushNotificationService:
                         "title": "Incoming Call",
                         "body": f"{caller_name} is calling..."
                     },
-                    "sound": "default"
+                    "sound": "default",
+                    "content-available": 1,
                 },
                 **payload
             }

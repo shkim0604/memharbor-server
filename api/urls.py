@@ -23,4 +23,16 @@ urlpatterns = [
     path("call/timeout/sweep", views.call_timeout_sweep, name="call_timeout_sweep"),
     path("call/end", views.call_end, name="call_end"),
     path("call/status/<str:call_id>", views.call_status, name="call_status"),
+
+    # User management
+    path("user/exists", views.user_exists, name="user_exists"),
+    path("user/create", views.user_create, name="user_create"),
+    path("user/update", views.user_update, name="user_update"),
+    path("user/delete", views.user_delete, name="user_delete"),
+    path("user/push-tokens", views.user_push_tokens, name="user_push_tokens"),
+    path("user/profile-image", views.user_profile_image, name="user_profile_image"),
+    path("user/profile-image/delete", views.user_profile_image_delete, name="user_profile_image_delete"),
+
+    # Group management
+    path("group/assign-receiver", views.group_assign_receiver, name="group_assign_receiver"),
 ]

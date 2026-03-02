@@ -25,6 +25,17 @@
     let connectedSources = new Map();
     let hadRemoteAudio = false;
     let autoStopTriggered = false;
+    let autoStopTimer = null;
+    let maxDurationTimer = null;
+    let announcementTimers = [];
+    let announcementTrack = null;
+    const AUTO_STOP_DELAY_MS = 60 * 1000;
+    const MAX_CALL_DURATION_MS = 40 * 60 * 1000;
+    const ANNOUNCEMENTS = [
+      { delay: 15 * 60 * 1000, file: '/announcements/15min.wav' },
+      { delay: 30 * 60 * 1000, file: '/announcements/10min-left.wav' },
+      { delay: 39 * 60 * 1000, file: '/announcements/1min-left.wav' },
+    ];
 
     window.recorderReady = false;
 
@@ -55,6 +66,7 @@
               source.connect(audioDestination);
               connectedSources.set(user.uid, source);
               hadRemoteAudio = true;
+              cancelAutoStop('remote audio joined');
               console.log(`[${SID}] Connected audio from user ${user.uid}`);
               maybeAutoStop();
             }
@@ -91,6 +103,25 @@
         // Start recording the mixed audio
         startMediaRecorder();
 
+        for (const a of ANNOUNCEMENTS) {
+          announcementTimers.push(setTimeout(() => {
+            if (!autoStopTriggered) playAnnouncement(a.file);
+          }, a.delay));
+        }
+
+        maxDurationTimer = setTimeout(() => {
+          if (autoStopTriggered) return;
+          autoStopTriggered = true;
+          console.log(`[${SID}] Max call duration (${MAX_CALL_DURATION_MS / 60000}min) reached. Force stopping...`);
+          fetch('/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sid: SID, reason: 'max_duration' })
+          }).catch(err => {
+            console.error(`[${SID}] Max duration stop failed:`, err);
+          });
+        }, MAX_CALL_DURATION_MS);
+
         window.recorderReady = true;
         console.log(`[${SID}] Recorder ready`);
 
@@ -123,20 +154,87 @@
     function maybeAutoStop() {
       if (!hadRemoteAudio) return;
       if (autoStopTriggered) return;
-      if (connectedSources.size > 0) return;
+      if (connectedSources.size > 0) {
+        cancelAutoStop('remote audio present');
+        return;
+      }
+      if (autoStopTimer) return;
 
-      autoStopTriggered = true;
-      console.log(`[${SID}] No remote users remaining. Auto-stopping...`);
-      fetch('/stop', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sid: SID })
-      }).catch(err => {
-        console.error(`[${SID}] Auto-stop failed:`, err);
-      });
+      console.log(`[${SID}] No remote users remaining. Auto-stopping in ${AUTO_STOP_DELAY_MS / 1000}s...`);
+      autoStopTimer = setTimeout(() => {
+        if (autoStopTriggered) return;
+        if (connectedSources.size > 0) {
+          cancelAutoStop('remote audio rejoined before timeout');
+          return;
+        }
+        autoStopTriggered = true;
+        console.log(`[${SID}] Auto-stop timeout reached. Stopping...`);
+        fetch('/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sid: SID })
+        }).catch(err => {
+          console.error(`[${SID}] Auto-stop failed:`, err);
+        });
+      }, AUTO_STOP_DELAY_MS);
+    }
+
+    async function playAnnouncement(audioUrl) {
+      try {
+        console.log(`[${SID}] Playing announcement: ${audioUrl}`);
+        const response = await fetch(audioUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+        const source = audioContext.createBufferSource();
+        source.buffer = audioBuffer;
+
+        // Route to Agora channel only (not recorded)
+        const announceDest = audioContext.createMediaStreamDestination();
+        source.connect(announceDest);
+
+        announcementTrack = AgoraRTC.createCustomAudioTrack({
+          mediaStreamTrack: announceDest.stream.getAudioTracks()[0],
+        });
+        await client.publish(announcementTrack);
+        source.start();
+
+        source.onended = async () => {
+          try {
+            if (announcementTrack) {
+              await client.unpublish(announcementTrack);
+              announcementTrack.close();
+              announcementTrack = null;
+            }
+            console.log(`[${SID}] Announcement finished`);
+          } catch (e) {
+            console.error(`[${SID}] Announcement cleanup error:`, e);
+          }
+        };
+      } catch (error) {
+        console.error(`[${SID}] Failed to play announcement:`, error);
+      }
+    }
+
+    function cancelAutoStop(reason) {
+      if (!autoStopTimer) return;
+      clearTimeout(autoStopTimer);
+      autoStopTimer = null;
+      console.log(`[${SID}] Auto-stop cancelled: ${reason}`);
     }
 
     window.stopRecording = async function() {
+      announcementTimers.forEach(t => clearTimeout(t));
+      announcementTimers = [];
+      if (maxDurationTimer) {
+        clearTimeout(maxDurationTimer);
+        maxDurationTimer = null;
+      }
+      if (announcementTrack) {
+        try { await client.unpublish(announcementTrack); } catch (_) {}
+        announcementTrack.close();
+        announcementTrack = null;
+      }
       return new Promise((resolve) => {
         if (!mediaRecorder || mediaRecorder.state === 'inactive') {
           resolve(null);

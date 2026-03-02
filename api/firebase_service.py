@@ -167,6 +167,125 @@ class FirestoreService:
         if not self.db:
             logger.warning("Firestore not available")
             return None
+
+        try:
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)
+            doc = doc_ref.get()
+
+            if doc.exists:
+                data = doc.to_dict() or {}
+                return {
+                    "fcmToken": data.get("fcmToken"),
+                    "voipToken": data.get("voipToken"),
+                    "platform": data.get("platform"),
+                    "exists": True,
+                }
+            logger.info(f"User document not found: {user_id}")
+            return {"exists": False}
+
+        except Exception as e:
+            logger.error(f"Error getting user tokens for {user_id}: {e}")
+            return None
+
+    # =========================================================================
+    # User Management
+    # =========================================================================
+
+    def user_exists(self, user_id: str) -> Optional[bool]:
+        if not self.db:
+            logger.warning("Firestore not available")
+            return None
+        try:
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)
+            return doc_ref.get().exists
+        except Exception as e:
+            logger.error(f"Error checking user exists {user_id}: {e}")
+            return None
+
+    def create_user(self, user_id: str, payload: Dict[str, Any]) -> bool:
+        if not self.db:
+            logger.warning("Firestore not available")
+            return False
+        try:
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)
+            doc_ref.set(payload)
+            return True
+        except Exception as e:
+            logger.error(f"Error creating user {user_id}: {e}")
+            return False
+
+    def update_user(self, user_id: str, payload: Dict[str, Any]) -> bool:
+        if not self.db:
+            logger.warning("Firestore not available")
+            return False
+        try:
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)
+            doc_ref.update(payload)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating user {user_id}: {e}")
+            return False
+
+    def delete_user(self, user_id: str) -> bool:
+        if not self.db:
+            logger.warning("Firestore not available")
+            return False
+        try:
+            self.db.collection(self.USERS_COLLECTION).document(user_id).delete()
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {e}")
+            return False
+
+    def update_push_tokens(self, user_id: str, payload: Dict[str, Any]) -> bool:
+        if not self.db:
+            logger.warning("Firestore not available")
+            return False
+        try:
+            doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)
+            doc_ref.set(payload, merge=True)
+            return True
+        except Exception as e:
+            logger.error(f"Error updating push tokens for {user_id}: {e}")
+            return False
+
+    # =========================================================================
+    # Group Operations
+    # =========================================================================
+
+    def assign_group_receiver(self, group_id: str, receiver_id: str, requester_uid: str) -> Dict[str, Any]:
+        if not self.db:
+            return {"ok": False, "error": "firestore_unavailable"}
+        try:
+            from firebase_admin import firestore as fb_firestore
+        except Exception as e:
+            logger.error(f"Failed to import firestore for transaction: {e}")
+            return {"ok": False, "error": "firestore_unavailable"}
+
+        group_ref = self.db.collection("groups").document(group_id)
+
+        @fb_firestore.transactional
+        def _txn(transaction):
+            snapshot = group_ref.get(transaction=transaction)
+            if not snapshot.exists:
+                return {"ok": False, "error": "group_not_found"}
+            data = snapshot.to_dict() or {}
+            members = data.get("careGiverUserIds") or data.get("caregiverUserIds") or []
+            if requester_uid not in members:
+                return {"ok": False, "error": "not_member"}
+            if data.get("receiverId"):
+                return {"ok": True, "assigned": False}
+            transaction.update(group_ref, {
+                "receiverId": receiver_id,
+                "updatedAt": timezone.now(),
+            })
+            return {"ok": True, "assigned": True}
+
+        try:
+            return _txn(self.db.transaction())
+        except Exception as e:
+            logger.error(f"Error assigning receiver for group {group_id}: {e}")
+            return {"ok": False, "error": "transaction_failed"}
         
         try:
             doc_ref = self.db.collection(self.USERS_COLLECTION).document(user_id)

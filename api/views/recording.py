@@ -7,7 +7,7 @@ from django.http import JsonResponse, HttpResponseNotAllowed
 from django.views.decorators.csrf import csrf_exempt
 from agora_token_builder import RtcTokenBuilder
 
-from ..constants import RECORDER_SERVICE_URL, ROLE_SUBSCRIBER
+from ..constants import RECORDER_SERVICE_URL, ROLE_PUBLISHER
 from ..http import json_body, require_env
 from ..recording_client import recorder_service_post
 
@@ -41,9 +41,9 @@ def recording_start(request):
         app_cert = os.environ.get("AGORA_APP_CERT")
         if app_cert:
             recorder_uid = data.get("uid", 999999)
-            expire_ts = int(time.time()) + 86400
+            expire_ts = int(time.time()) + 3600 
             token = RtcTokenBuilder.buildTokenWithUid(
-                app_id, app_cert, channel, recorder_uid, ROLE_SUBSCRIBER, expire_ts
+                app_id, app_cert, channel, recorder_uid, ROLE_PUBLISHER, expire_ts
             )
 
     payload = {
@@ -84,7 +84,12 @@ def recording_stop(request):
     if channel:
         payload["channel"] = channel
 
-    return recorder_service_post("stop", payload, allow_not_found_ok=True)
+    return recorder_service_post(
+        "stop",
+        payload,
+        allow_not_found_ok=True,
+        allow_conflict_ok=True,
+    )
 
 
 @csrf_exempt

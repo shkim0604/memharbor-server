@@ -18,6 +18,12 @@ logger = logging.getLogger("api")
 _missed_timers = {}
 _missed_timers_lock = threading.Lock()
 
+def _token_fingerprint(token: str) -> str:
+    if not token:
+        return "missing"
+    tail = token[-6:] if len(token) >= 6 else token
+    return f"len={len(token)},tail={tail}"
+
 
 def _schedule_missed_timeout(call_id: str, timeout_seconds: int = MISSED_TIMEOUT_SECONDS) -> None:
     def _timeout_handler():
@@ -116,6 +122,13 @@ def call_invite(request):
         platform = user_tokens.get("platform", "")
         fcm_token = user_tokens.get("fcmToken")
         voip_token = user_tokens.get("voipToken")
+        logger.info(
+            "[CALL/INVITE] Tokens: receiver=%s platform=%s fcm=%s voip=%s",
+            receiver_id,
+            platform,
+            _token_fingerprint(fcm_token),
+            _token_fingerprint(voip_token),
+        )
 
         reserve = firestore_service.reserve_push_send(call_id)
         if reserve is False:
@@ -139,9 +152,21 @@ def call_invite(request):
                 push_sent = True
                 push_platform = result.platform
                 firestore_service.update_push_status(call_id, True, result.platform)
+                logger.info(
+                    "[CALL/INVITE] Push success: call=%s platform=%s message_id=%s",
+                    call_id,
+                    result.platform,
+                    result.message_id,
+                )
             else:
                 push_error = result.error
-                logger.warning(f"[CALL/INVITE] Push failed: {result.error}")
+                logger.warning(
+                    "[CALL/INVITE] Push failed: call=%s platform=%s error=%s code=%s",
+                    call_id,
+                    result.platform,
+                    result.error,
+                    result.error_code,
+                )
     else:
         if user_tokens is None:
             push_error = "firestore_error"
@@ -195,10 +220,18 @@ def call_answer(request):
         return JsonResponse({"error": "call_not_found"}, status=404)
 
     if call_record.get("status") != "pending":
+        logger.info(
+            "[CALL/ANSWER] Idempotent: call=%s status=%s action=%s",
+            call_id,
+            call_record.get("status"),
+            action,
+        )
+        _cancel_missed_timeout(call_id)
         return JsonResponse({
-            "error": "call_not_pending",
-            "currentStatus": call_record.get("status"),
-        }, status=409)
+            "success": True,
+            "callId": call_id,
+            "status": call_record.get("status"),
+        })
 
     new_status = "accepted" if action == "accept" else "declined"
     update_kwargs = {}
@@ -251,10 +284,18 @@ def call_cancel(request):
         return JsonResponse({"error": "call_not_found"}, status=404)
 
     if call_record.get("status") != "pending":
+        # Idempotent cancel: if call is already ended/missed, treat as success.
+        logger.info(
+            "[CALL/CANCEL] Idempotent: call=%s status=%s",
+            call_id,
+            call_record.get("status"),
+        )
+        _cancel_missed_timeout(call_id)
         return JsonResponse({
-            "error": "call_not_pending",
-            "currentStatus": call_record.get("status"),
-        }, status=409)
+            "success": True,
+            "callId": call_id,
+            "status": call_record.get("status"),
+        })
 
     updated = firestore_service.update_call_status(call_id, "cancelled", endedAt=timezone.now())
 
@@ -266,13 +307,35 @@ def call_cancel(request):
 
     if user_tokens and user_tokens.get("exists"):
         platform = user_tokens.get("platform", "")
-        run_async(push_service.send_call_cancelled_push(
+        logger.info(
+            "[CALL/CANCEL] Tokens: receiver=%s platform=%s fcm=%s voip=%s",
+            receiver_id,
+            platform,
+            _token_fingerprint(user_tokens.get("fcmToken")),
+            _token_fingerprint(user_tokens.get("voipToken")),
+        )
+        result = run_async(push_service.send_call_cancelled_push(
             platform=platform,
             fcm_token=user_tokens.get("fcmToken"),
             voip_token=user_tokens.get("voipToken"),
             call_id=call_id,
             channel_name=call_record.get("channelName"),
         ))
+        if result.success:
+            logger.info(
+                "[CALL/CANCEL] Push success: call=%s platform=%s message_id=%s",
+                call_id,
+                result.platform,
+                result.message_id,
+            )
+        else:
+            logger.warning(
+                "[CALL/CANCEL] Push failed: call=%s platform=%s error=%s code=%s",
+                call_id,
+                result.platform,
+                result.error,
+                result.error_code,
+            )
 
     logger.info(f"[CALL/CANCEL] Call {call_id} cancelled")
 

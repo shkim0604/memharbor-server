@@ -7,7 +7,10 @@ Django 기반 Agora RTC 토큰 발급, 로컬 녹음, 통화 관리 서버
 - **Agora RTC 토큰 발급** - 음성 통화용 토큰 생성
 - **로컬 녹음** - 서버가 채널에 참여하여 오디오 녹음 (Cloud Recording 미사용)
 - **통화 관리** - 채널명 생성, 푸시 알림, 통화 상태 관리
+- **통화 시간 제한** - 최대 40분, 15분/30분/39분에 한국어 음성 안내 후 자동 종료
+- **사용자/그룹 관리** - Firestore 기반 사용자 CRUD, 그룹 수신자 할당
 - **Firebase 연동** - Firestore 기반 데이터 저장 (서버 DB 미사용)
+- **Firebase 인증** - 모든 API에 Firebase ID Token 검증 미들웨어 적용
 
 ---
 
@@ -43,7 +46,25 @@ Base URL: `https://memory-harbor.delight-house.org`
 | POST | `/api/call/end` | 통화 종료 |
 | GET | `/api/call/status/<call_id>` | 통화 상태 조회 |
 
-> **참고**: 디바이스 토큰은 앱에서 직접 Firestore `users/{uid}`에 저장합니다.
+### 사용자 관리 API
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/user/exists` | 사용자 존재 여부 확인 |
+| POST | `/api/user/create` | 사용자 생성 |
+| POST | `/api/user/update` | 사용자 정보 수정 |
+| POST | `/api/user/delete` | 사용자 삭제 |
+| POST | `/api/user/push-tokens` | 푸시 토큰 업데이트 |
+| POST | `/api/user/profile-image` | 프로필 이미지 업로드 |
+| POST | `/api/user/profile-image/delete` | 프로필 이미지 삭제 |
+
+### 그룹 관리 API
+
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| POST | `/api/group/assign-receiver` | 그룹 수신자 할당 |
+
+> **인증**: 모든 API 요청에 `Authorization: Bearer <Firebase ID Token>` 헤더가 필요합니다.
 
 ### POST /api/token
 
@@ -61,7 +82,7 @@ Base URL: `https://memory-harbor.delight-house.org`
 | `channel` | ✅ | 채널명 |
 | `uid` 또는 `user_account` | ✅ | 사용자 식별자 (정수) |
 | `role` | | `publisher` / `subscriber` (기본값: subscriber) |
-| `expire` | | 토큰 유효기간 초 (기본값/최대: 86400) |
+| `expire` | | 토큰 유효기간 초 (기본값/최대: 3600) |
 
 **응답:**
 ```json
@@ -135,6 +156,8 @@ Base URL: `https://memory-harbor.delight-house.org`
 
 통화 시작 - 채널명 생성, Firestore에 통화 기록 저장, 수신자에게 푸시 전송
 
+> 모든 API 요청에 `Authorization: Bearer <Firebase ID Token>` 헤더가 필요합니다.
+
 ```json
 {
   "group_id": "group1",
@@ -160,13 +183,13 @@ Base URL: `https://memory-harbor.delight-house.org`
 {
   "success": true,
   "callId": "uuid",
-  "channelName": "group1_user123_user456_1234567890123",
+  "channelName": "uuid",
   "pushSent": true,
   "pushPlatform": "ios"
 }
 ```
 
-> 채널명 형식: `{groupId}_{callerId}_{receiverId}_{timestamp}`
+> 채널명은 `callId`와 동일합니다 (UUID).
 > 통화 기록은 Firestore `calls/{callId}`에 저장됩니다.
 > 서버는 `pending` 상태로 저장한 뒤 60초 타임아웃을 예약합니다.
 
@@ -191,7 +214,7 @@ Base URL: `https://memory-harbor.delight-house.org`
 {
   "success": true,
   "callId": "uuid",
-  "channelName": "group1_user123_user456_1234567890123",
+  "channelName": "uuid",
   "status": "accepted"
 }
 ```
@@ -282,7 +305,7 @@ Base URL: `https://memory-harbor.delight-house.org`
 ```json
 {
   "callId": "uuid",
-  "channelName": "group1_user123_user456_1234567890123",
+  "channelName": "uuid",
   "groupId": "group1",
   "receiverId": "user456",
   "caregiverUserId": "user123",
@@ -310,6 +333,24 @@ Base URL: `https://memory-harbor.delight-house.org`
 - `cancelled`: 취소됨 (발신자가 취소)
 - `missed`: 부재중
 - `ended`: 종료됨
+
+### 통화 시간 제한
+
+통화는 **최대 40분**으로 제한됩니다. 레코더가 채널에 참여한 시점부터 타이머가 시작되며, 다음과 같이 음성 안내가 제공됩니다:
+
+| 경과 시간 | 안내 내용 |
+|-----------|----------|
+| 15분 | "15분 지났습니다" |
+| 30분 | "10분 남았습니다" |
+| 39분 | "1분 후 통화가 종료됩니다" |
+| 40분 | 자동 종료 |
+
+40분 도달 시:
+1. Agora kicking-rule API로 채널 내 모든 사용자 강제 퇴장
+2. Firestore `calls/{callId}` 상태를 `ended`로 업데이트 (`endReason: "max_duration"`)
+3. 녹음 중지 및 파일 저장
+
+> 음성 안내는 Agora 채널로만 송출되며, 녹음 파일에는 포함되지 않습니다.
 
 ---
 
@@ -342,6 +383,10 @@ FIREBASE_SERVICE_ACCOUNT_PATH=/path/to/service-account.json
 # FIREBASE_USE_EMULATOR=true
 # FIRESTORE_EMULATOR_HOST=localhost:8080
 # FIREBASE_STORAGE_EMULATOR_HOST=localhost:9199
+
+# Agora REST API (통화 시간 초과 시 사용자 강제 퇴장용)
+AGORA_CUSTOMER_ID=your_customer_id
+AGORA_CUSTOMER_SECRET=your_customer_secret
 
 # Recorder 서비스
 RECORDER_SERVICE_URL=http://recorder:3100
@@ -382,12 +427,15 @@ memharbor_server/
 │   │   ├── health.py
 │   │   ├── token.py
 │   │   ├── recording.py
-│   │   └── calls.py
+│   │   ├── calls.py
+│   │   ├── user.py        # 사용자 관리
+│   │   └── group.py       # 그룹 관리
+│   ├── middleware.py       # Firebase 인증 미들웨어
 │   ├── urls.py            # URL 라우팅
 │   ├── constants.py       # API 상수 모음
 │   ├── http.py            # 공통 HTTP 유틸
 │   ├── recording_client.py # 녹음 서비스 호출
-│   └── utils.py           # 공통 유틸
+│   ├── utils.py           # 공통 유틸
 │   ├── firebase_service.py # Firestore 연동 서비스
 │   └── push_service.py    # 푸시 알림 서비스 (APNs, FCM)
 ├── config/                 # Django 설정
@@ -396,7 +444,8 @@ memharbor_server/
 │   ├── Dockerfile
 │   ├── server.js          # Express 서버
 │   └── public/
-│       └── recorder.html  # Agora 채널 참여 + 녹음
+│       ├── recorder.html  # Agora 채널 참여 + 녹음
+│       └── announcements/ # 음성 안내 WAV 파일 (15min, 10min-left, 1min-left)
 ├── logs/                   # 로그 파일 (로컬/도커 마운트)
 │   ├── api.log            # API 요청 로그
 │   └── django.log         # Django 전체 로그
@@ -438,11 +487,13 @@ memharbor_server/
 ```json
 {
   "callId": "uuid",
-  "channelName": "group1_user123_user456_1234567890",
+  "channelName": "uuid",
   "groupId": "group1",
-  "callerId": "user123",
+  "caregiverUserId": "user123",
   "receiverId": "user456",
-  "callerName": "John Doe",
+  "giverNameSnapshot": "John Doe",
+  "receiverNameSnapshot": "김영옥",
+  "groupNameSnapshot": "Boston Care Group",
   "status": "pending",
   "createdAt": "2026-02-04T05:49:23.670148Z",
   "updatedAt": "2026-02-04T05:49:23.670148Z",
@@ -458,9 +509,9 @@ memharbor_server/
 | `callId` | string | 통화 고유 ID (UUID) |
 | `channelName` | string | Agora 채널명 |
 | `groupId` | string | 그룹 ID |
-| `callerId` | string | 발신자 UID |
+| `caregiverUserId` | string | 발신자 UID |
 | `receiverId` | string | 수신자 UID |
-| `callerName` | string | 발신자 표시명 |
+| `giverNameSnapshot` | string | 발신자 표시명 스냅샷 |
 | `status` | string | 통화 상태 |
 | `createdAt` | timestamp | 생성 시간 |
 | `answeredAt` | timestamp | 수락 시간 |
@@ -605,16 +656,16 @@ docker logs -f memharbor_server-recorder-1
     |-------------------------->|                           |
 ```
 
-**채널명 형식**: `{groupId}_{callerId}_{receiverId}_{timestamp}`
+**채널명**: `callId`와 동일 (UUID)
 
 **푸시 페이로드**:
 ```json
 {
   "type": "incoming_call",
   "callId": "uuid",
-  "channelName": "group1_user123_user456_1234567890",
+  "channelName": "uuid",
   "callerName": "John Doe",
-  "callerID": "user123",
+  "callerId": "user123",
   "groupId": "group1",
   "receiverId": "user456"
 }
@@ -718,6 +769,6 @@ docker cp memharbor_server-recorder-1:/app/recordings/file.wav ./
 
 ### 기타
 
-- 녹음 봇은 **Audience 모드**로 참여 (다른 참가자에게 보이지 않음)
+- 녹음 봇은 **Publisher 모드**로 참여 (음성 안내 송출을 위해)
 - Cloudflare Tunnel 설정은 [Zero Trust 대시보드](https://one.dash.cloudflare.com/)에서 관리
 - 코드 수정 후 `docker-compose restart` 또는 `--build` 필요

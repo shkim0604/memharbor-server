@@ -30,6 +30,7 @@ COPY . .
 # Create recordings directory
 RUN mkdir -p /app/recordings
 
+
 EXPOSE 3100
 
 CMD ["node", "server.js"]

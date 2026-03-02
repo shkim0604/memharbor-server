@@ -82,6 +82,8 @@ if (!fs.existsSync(RECORDINGS_DIR)) {
 
 // Config
 const AGORA_APP_ID = process.env.AGORA_APP_ID || '';
+const AGORA_CUSTOMER_ID = process.env.AGORA_CUSTOMER_ID || '';
+const AGORA_CUSTOMER_SECRET = process.env.AGORA_CUSTOMER_SECRET || '';
 const PORT = process.env.RECORDER_PORT || 3100;
 const FIREBASE_STORAGE_BUCKET = process.env.FIREBASE_STORAGE_BUCKET || '';
 
@@ -141,6 +143,74 @@ if (useEmulator) {
     console.log('Firebase Admin initialized from file');
   } catch (error) {
     console.error('Firebase initialization failed:', error.message);
+  }
+}
+
+async function kickAllFromChannel(channelName) {
+  if (!AGORA_CUSTOMER_ID || !AGORA_CUSTOMER_SECRET) {
+    console.log('[KICK] Agora customer credentials not configured, skipping');
+    return false;
+  }
+  try {
+    const auth = Buffer.from(`${AGORA_CUSTOMER_ID}:${AGORA_CUSTOMER_SECRET}`).toString('base64');
+    const resp = await fetch('https://api.agora.io/dev/v1/kicking-rule', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Basic ${auth}`,
+      },
+      body: JSON.stringify({
+        appid: AGORA_APP_ID,
+        cname: channelName,
+        uid: 0,
+        time: 1,
+        privileges: ['join_channel'],
+      }),
+    });
+    const body = await resp.json();
+    console.log(`[KICK] Channel ${channelName}: status=${resp.status}`, JSON.stringify(body));
+    return resp.ok;
+  } catch (error) {
+    console.error(`[KICK] Failed to kick from channel ${channelName}:`, error.message);
+    return false;
+  }
+}
+
+async function endCallInFirestore(callId) {
+  if (!firebaseInitialized) {
+    console.log('Firebase not initialized, skipping call end');
+    return false;
+  }
+  try {
+    const db = admin.firestore();
+    const callRef = db.collection('calls').doc(callId);
+    const doc = await callRef.get();
+    if (!doc.exists) {
+      console.log(`[MAX_DURATION] Call ${callId} not found in Firestore`);
+      return false;
+    }
+    const data = doc.data();
+    if (data.status !== 'accepted') {
+      console.log(`[MAX_DURATION] Call ${callId} already ${data.status}, skipping`);
+      return false;
+    }
+    const now = admin.firestore.Timestamp.now();
+    const answeredAt = data.answeredAt;
+    let durationSec = 0;
+    if (answeredAt) {
+      durationSec = Math.round(now.seconds - answeredAt.seconds);
+    }
+    await callRef.update({
+      status: 'ended',
+      endedAt: now,
+      durationSec,
+      endReason: 'max_duration',
+    });
+    console.log(`[MAX_DURATION] Call ${callId} ended in Firestore (duration=${durationSec}s)`);
+    return true;
+  } catch (error) {
+    console.error(`[MAX_DURATION] Failed to end call ${callId}:`, error.message);
+    return false;
   }
 }
 
@@ -291,7 +361,7 @@ app.post('/start', async (req, res) => {
 
 // Stop recording
 app.post('/stop', async (req, res) => {
-  const { sid, channel } = req.body;
+  const { sid, channel, reason } = req.body;
 
   let session;
   if (sid) {
@@ -352,6 +422,11 @@ app.post('/stop', async (req, res) => {
         filepath: finalFilepath,
         duration,
       });
+    }
+
+    if (reason === 'max_duration') {
+      await kickAllFromChannel(session.channel);
+      await endCallInFirestore(session.channel);
     }
 
     res.json({
