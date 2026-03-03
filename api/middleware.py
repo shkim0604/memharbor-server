@@ -24,7 +24,12 @@ PROTECTED_PATHS = {
     "/api/user/push-tokens",
     "/api/user/profile-image",
     "/api/user/profile-image/delete",
+    "/api/user/delete-request",
     "/api/group/assign-receiver",
+    "/api/reviews/feed",
+    "/api/reviews/upsert",
+    "/api/reviews/context",
+    "/api/reviews/my",
 }
 
 UID_FIELDS = {

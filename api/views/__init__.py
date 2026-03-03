@@ -15,11 +15,13 @@ from .user import (
     user_create,
     user_update,
     user_delete,
+    user_delete_request,
     user_push_tokens,
     user_profile_image,
     user_profile_image_delete,
 )
 from .group import group_assign_receiver
+from .reviews import reviews_feed, reviews_upsert, reviews_context, reviews_my
 
 __all__ = [
     "health",
@@ -41,6 +43,11 @@ __all__ = [
     "user_delete",
     "user_push_tokens",
     "user_profile_image",
+    "user_delete_request",
     "user_profile_image_delete",
     "group_assign_receiver",
+    "reviews_feed",
+    "reviews_upsert",
+    "reviews_context",
+    "reviews_my",
 ]

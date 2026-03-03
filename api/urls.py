@@ -32,7 +32,15 @@ urlpatterns = [
     path("user/push-tokens", views.user_push_tokens, name="user_push_tokens"),
     path("user/profile-image", views.user_profile_image, name="user_profile_image"),
     path("user/profile-image/delete", views.user_profile_image_delete, name="user_profile_image_delete"),
+    path("user/delete-request", views.user_delete_request, name="user_delete_request"),
+    path("user/deletion-request", views.user_delete_request, name="user_deletion_request"),
 
     # Group management
     path("group/assign-receiver", views.group_assign_receiver, name="group_assign_receiver"),
+
+    # Reviews
+    path("reviews/feed", views.reviews_feed, name="reviews_feed"),
+    path("reviews/upsert", views.reviews_upsert, name="reviews_upsert"),
+    path("reviews/context", views.reviews_context, name="reviews_context"),
+    path("reviews/my", views.reviews_my, name="reviews_my"),
 ]
