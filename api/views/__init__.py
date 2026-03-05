@@ -21,7 +21,14 @@ from .user import (
     user_profile_image_delete,
 )
 from .group import group_assign_receiver
-from .reviews import reviews_feed, reviews_upsert, reviews_context, reviews_my
+from .reviews import (
+    reviews_feed,
+    reviews_upsert,
+    reviews_context,
+    reviews_my,
+    reviews_config,
+    reviews_config_invalidate_cache,
+)
 
 __all__ = [
     "health",
@@ -50,4 +57,6 @@ __all__ = [
     "reviews_upsert",
     "reviews_context",
     "reviews_my",
+    "reviews_config",
+    "reviews_config_invalidate_cache",
 ]

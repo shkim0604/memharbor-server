@@ -87,3 +87,6 @@ build/
 *.tmp
 *.temp
 .cache/
+
+# Keys
+AuthKey_*.p8

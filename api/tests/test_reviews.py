@@ -1,4 +1,5 @@
 import json
+import os
 from unittest.mock import patch
 
 from django.test import RequestFactory, SimpleTestCase
@@ -92,3 +93,31 @@ class ReviewsApiTest(SimpleTestCase):
         )
         self.assertEqual(topic_type, "residence")
         self.assertEqual(topic_id, "res_1")
+
+    @patch("api.views.reviews._get_restricted_questions_visible_date_cached")
+    def test_reviews_config_returns_date(self, mocked_get_date):
+        mocked_get_date.return_value = "2026-03-10"
+        req = self._attach_uid(self.factory.get("/api/reviews/config"))
+        res = reviews.reviews_config(req)
+        body = json.loads(res.content)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(body.get("restrictedQuestionsVisibleDateEt"), "2026-03-10")
+
+    @patch("api.views.reviews._get_restricted_questions_visible_date_cached")
+    def test_reviews_config_returns_empty_when_missing(self, mocked_get_date):
+        mocked_get_date.return_value = None
+        req = self._attach_uid(self.factory.get("/api/reviews/config"))
+        res = reviews.reviews_config(req)
+        body = json.loads(res.content)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(body, {})
+
+    def test_parse_yyyy_mm_dd_validation(self):
+        self.assertIsNotNone(reviews._parse_yyyy_mm_dd("2026-03-10"))
+        self.assertIsNone(reviews._parse_yyyy_mm_dd("2026/03/10"))
+        self.assertIsNone(reviews._parse_yyyy_mm_dd("2026-3-10"))
+
+    def test_is_restricted_questions_visible_today_et_invalid_env(self):
+        with patch.dict(os.environ, {"REVIEWS_RESTRICTED_QUESTIONS_VISIBLE_DATE_ET": "invalid"}, clear=False):
+            reviews._invalidate_reviews_config_cache()
+            self.assertFalse(reviews._is_restricted_questions_visible_today_et())

@@ -461,63 +461,215 @@ memharbor_server/
 
 ## Firestore 데이터 구조
 
-### `users/{uid}` 컬렉션 (앱에서 저장)
+2026-03-03 기준 실DB 점검 결과에 맞춘 canonical 스키마입니다.
 
-사용자 정보 및 푸시 토큰을 저장합니다. **앱에서 직접 저장**하며, 서버는 읽기만 합니다.
+### 루트 컬렉션
 
-```json
-{
-  "fcmToken": "android_fcm_token_string",
-  "voipToken": "ios_voip_token_string",
-  "platform": "ios",
-  ...
-}
-```
+- `users/{uid}`
+- `groups/{groupId}`
+- `receivers/{receiverId}`
+- `calls/{callId}`
+- `userDeletionRequests/{uid}`
+- `meta/*` (현재 문서 없음)
+- `recordings/*` (현재 문서 없음)
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `fcmToken` | string | Android FCM 토큰 |
-| `voipToken` | string | iOS VoIP 푸시 토큰 |
-| `platform` | string | `ios` 또는 `android` |
-
-### `calls/{callId}` 컬렉션 (서버에서 관리)
-
-통화 기록을 저장합니다. **서버에서 생성 및 업데이트**합니다.
+### `users/{uid}` (서버/앱 공용)
 
 ```json
 {
-  "callId": "uuid",
-  "channelName": "uuid",
-  "groupId": "group1",
-  "caregiverUserId": "user123",
-  "receiverId": "user456",
-  "giverNameSnapshot": "John Doe",
-  "receiverNameSnapshot": "김영옥",
-  "groupNameSnapshot": "Boston Care Group",
-  "status": "pending",
-  "createdAt": "2026-02-04T05:49:23.670148Z",
-  "updatedAt": "2026-02-04T05:49:23.670148Z",
-  "answeredAt": null,
-  "endedAt": null,
-  "pushSent": true,
-  "pushPlatform": "ios"
+  "uid": "string",
+  "name": "string",
+  "email": "string",
+  "profileImage": "string",
+  "profileImagePath": "string",
+  "profileImageUpdatedAt": "timestamp",
+  "introMessage": "string",
+  "groupIds": ["string"],
+  "platform": "ios|android",
+  "fcmToken": "string",
+  "apnsToken": "string",
+  "voipToken": "string",
+  "tokensUpdatedAt": "timestamp",
+  "createdAt": "timestamp",
+  "lastActivityAt": "timestamp",
+  "deletionStatus": "requested|...",
+  "deletionRequestedAt": "timestamp",
+  "scheduledDeletionAt": "timestamp"
 }
 ```
 
-| 필드 | 타입 | 설명 |
-|------|------|------|
-| `callId` | string | 통화 고유 ID (UUID) |
-| `channelName` | string | Agora 채널명 |
-| `groupId` | string | 그룹 ID |
-| `caregiverUserId` | string | 발신자 UID |
-| `receiverId` | string | 수신자 UID |
-| `giverNameSnapshot` | string | 발신자 표시명 스냅샷 |
-| `status` | string | 통화 상태 |
-| `createdAt` | timestamp | 생성 시간 |
-| `answeredAt` | timestamp | 수락 시간 |
-| `endedAt` | timestamp | 종료 시간 |
-| `pushSent` | boolean | 푸시 전송 성공 여부 |
-| `pushPlatform` | string | 푸시 플랫폼 (ios/android) |
+정합성 규칙:
+- `createdAt`, `lastActivityAt`는 항상 `timestamp` 저장
+- 토큰 업데이트 시 `tokensUpdatedAt` 함께 저장
+
+### `groups/{groupId}`
+
+```json
+{
+  "groupId": "string",
+  "name": "string",
+  "receiverId": "string",
+  "careGiverUserIds": ["uid1", "uid2"]
+}
+```
+
+정합성 규칙:
+- 멤버 필드 키는 `careGiverUserIds`로 통일 (과거 `caregiverUserIds` 혼재 데이터는 읽기 호환 유지)
+
+### `receivers/{receiverId}`
+
+```json
+{
+  "receiverId": "string",
+  "groupId": "string",
+  "name": "string",
+  "profileImage": "string",
+  "majorResidences": [
+    {
+      "residenceId": "string",
+      "era": "string",
+      "location": "string",
+      "detail": "string",
+      "label": "string"
+    }
+  ]
+}
+```
+
+서브컬렉션:
+- `receivers/{receiverId}/residence_stats/{residenceId}`
+- `receivers/{receiverId}/meaning_stats/{meaningId}`
+
+### `calls/{callId}` (서버 canonical)
+
+```json
+{
+  "callId": "string(uuid)",
+  "channelName": "string",
+  "groupId": "string",
+  "receiverId": "string",
+  "caregiverUserId": "string",
+  "groupNameSnapshot": "string",
+  "giverNameSnapshot": "string",
+  "receiverNameSnapshot": "string",
+  "status": "pending|accepted|declined|cancelled|missed|ended",
+  "createdAt": "timestamp",
+  "answeredAt": "timestamp|null",
+  "endedAt": "timestamp|null",
+  "durationSec": "number|null",
+  "pushSent": "boolean",
+  "pushReservedAt": "timestamp",
+  "pushPlatform": "ios|android|''",
+  "updatedAt": "timestamp",
+  "reviewCount": "number",
+  "lastReviewAt": "timestamp|null",
+  "humanSummary": "string",
+  "humanKeywords": ["string"],
+  "humanNotes": "string",
+  "aiSummary": "string",
+  "selectedTopicType": "residence|meaning|''",
+  "selectedTopicId": "string",
+  "selectedResidenceId": "string",
+  "selectedMeaningId": "string",
+  "selectedTopicLabel": "string",
+  "selectedTopicQuestion": "string",
+  "mentionedResidences": ["string"],
+  "recordingFilename": "string",
+  "recordingFormat": "wav|webm",
+  "recordingDurationMs": "number",
+  "recordingSavedAt": "timestamp",
+  "endReason": "string"
+}
+```
+
+정합성 규칙:
+- `status`는 `completed`를 사용하지 않고 `ended`로 통일
+- 레거시 필드 `channelId`, `isConfirmed`, `startedAt`는 사용하지 않음
+
+### `calls/{callId}/reviews/{reviewId}` (신규 canonical + 레거시 호환)
+
+```json
+{
+  "callId": "string",
+  "writerUserId": "string",
+  "writerNameSnapshot": "string",
+  "createdAt": "timestamp",
+  "updatedAt": "timestamp",
+
+  "listeningScore": "number",
+  "notFullyHeardMoment": "string",
+  "nextSessionTry": "string",
+  "emotionWord": "string",
+  "emotionSource": "string",
+  "smallReset": "string",
+
+  "callMemo": "string",
+  "selectedTopicType": "residence|meaning|''",
+  "selectedTopicId": "string",
+  "selectedTopicLabel": "string",
+  "selectedTopicQuestion": "string",
+  "selectedResidenceId": "string",
+  "selectedMeaningId": "string",
+  "mentionedResidences": ["string"],
+  "requiredQuestionDurationSec": "number",
+  "requiredStepOpenedAt": "string",
+
+  "humanSummary": "string",
+  "humanKeywords": ["string"],
+  "mood": "string",
+  "comment": "string"
+}
+```
+
+정합성 규칙:
+- 신규 저장 필드(`callMemo`, `selectedTopic*`)를 canonical로 사용
+- 레거시 소비 필드(`humanSummary`, `humanKeywords`, `mood`, `comment`)는 호환을 위해 미러링 유지
+
+### `calls/{callId}/write_logs/{logId}`
+
+```json
+{
+  "requestId": "string",
+  "uid": "string",
+  "callId": "string",
+  "groupId": "string",
+  "reviewId": "string",
+  "mode": "create|edit",
+  "createdAt": "timestamp"
+}
+```
+
+### `userDeletionRequests/{uid}`
+
+```json
+{
+  "uid": "string",
+  "email": "string",
+  "notifyEmail": "string",
+  "tokenUid": "string",
+  "status": "requested",
+  "requestedAt": "timestamp",
+  "scheduledDeleteAt": "timestamp",
+  "emailSent": "boolean",
+  "emailSentAt": "timestamp|null",
+  "updatedAt": "timestamp"
+}
+```
+
+정합성 규칙:
+- `emailSentAt`는 문자열이 아닌 `timestamp|null`로 저장
+
+### 기존 데이터 정리(일회성)
+
+불일치 데이터 정리는 아래 스크립트 사용:
+
+```bash
+# 변경 사항만 확인
+python firebase/normalize_firestore_schema.py
+
+# 실제 반영
+python firebase/normalize_firestore_schema.py --apply
+```
 
 ---
 

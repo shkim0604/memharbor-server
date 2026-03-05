@@ -30,6 +30,8 @@ PROTECTED_PATHS = {
     "/api/reviews/upsert",
     "/api/reviews/context",
     "/api/reviews/my",
+    "/api/reviews/config",
+    "/api/reviews/config/invalidate-cache",
 }
 
 UID_FIELDS = {

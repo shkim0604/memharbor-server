@@ -43,4 +43,6 @@ urlpatterns = [
     path("reviews/upsert", views.reviews_upsert, name="reviews_upsert"),
     path("reviews/context", views.reviews_context, name="reviews_context"),
     path("reviews/my", views.reviews_my, name="reviews_my"),
+    path("reviews/config", views.reviews_config, name="reviews_config"),
+    path("reviews/config/invalidate-cache", views.reviews_config_invalidate_cache, name="reviews_config_invalidate_cache"),
 ]

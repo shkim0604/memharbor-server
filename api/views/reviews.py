@@ -1,7 +1,11 @@
 import json
 import logging
+import os
+import re
+import time
 import uuid
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from django.http import JsonResponse
@@ -11,6 +15,11 @@ from django.views.decorators.csrf import csrf_exempt
 from ..firebase_service import firestore_service
 
 logger = logging.getLogger("api")
+
+ET_TZ = ZoneInfo("America/New_York")
+DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+CONFIG_CACHE_TTL_DEFAULT_SEC = 15
+_config_cache: Dict[str, Any] = {"value": None, "expires_at": 0.0}
 
 UPSERT_ALLOWED_KEYS = {
     "callId",
@@ -31,6 +40,15 @@ UPSERT_ALLOWED_KEYS = {
     "mentionedResidences",
     "requiredQuestionDurationSec",
     "requiredStepOpenedAt",
+}
+
+RESTRICTED_QUESTION_FIELDS = {
+    "listeningScore",
+    "notFullyHeardMoment",
+    "nextSessionTry",
+    "emotionWord",
+    "emotionSource",
+    "smallReset",
 }
 
 
@@ -54,6 +72,69 @@ def _firebase_uid(request) -> Optional[str]:
 def _request_id(request) -> str:
     rid = request.headers.get("X-Request-Id") or request.headers.get("X-Correlation-Id")
     return rid.strip() if rid else str(uuid.uuid4())
+
+
+def _cache_ttl_sec() -> int:
+    raw = os.environ.get("REVIEWS_CONFIG_CACHE_TTL_SEC", str(CONFIG_CACHE_TTL_DEFAULT_SEC))
+    try:
+        ttl = int(raw)
+    except ValueError:
+        ttl = CONFIG_CACHE_TTL_DEFAULT_SEC
+    return max(ttl, 0)
+
+
+def _invalidate_reviews_config_cache() -> None:
+    _config_cache["value"] = None
+    _config_cache["expires_at"] = 0.0
+
+
+def _read_restricted_date_raw() -> str:
+    # Primary config source: env var
+    # Fallback alias for compatibility.
+    return _as_str(
+        os.environ.get("REVIEWS_RESTRICTED_QUESTIONS_VISIBLE_DATE_ET")
+        or os.environ.get("RESTRICTED_QUESTIONS_VISIBLE_DATE_ET")
+    )
+
+
+def _parse_yyyy_mm_dd(value: str) -> Optional[datetime]:
+    if not value or not DATE_RE.match(value):
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+
+def _get_restricted_questions_visible_date_cached() -> Optional[str]:
+    now_mono = time.monotonic()
+    cached = _config_cache.get("value")
+    if cached is not None and now_mono < float(_config_cache.get("expires_at") or 0):
+        return cached
+
+    raw = _read_restricted_date_raw()
+    parsed = _parse_yyyy_mm_dd(raw)
+    if raw and not parsed:
+        logger.warning("[REVIEWS/CONFIG] invalid date format in config: value=%s", raw)
+        value = None
+    else:
+        value = raw if parsed else None
+
+    ttl = _cache_ttl_sec()
+    _config_cache["value"] = value
+    _config_cache["expires_at"] = now_mono + ttl
+    return value
+
+
+def _is_restricted_questions_visible_today_et() -> bool:
+    visible_date_str = _get_restricted_questions_visible_date_cached()
+    if not visible_date_str:
+        return False
+    parsed = _parse_yyyy_mm_dd(visible_date_str)
+    if not parsed:
+        return False
+    today_et = datetime.now(ET_TZ).date()
+    return today_et >= parsed.date()
 
 
 def _json_body(request) -> Tuple[Optional[Dict[str, Any]], Optional[JsonResponse]]:
@@ -154,6 +235,13 @@ def _log_result(
     )
 
 
+def _safe_keys(payload: Dict[str, Any]) -> List[str]:
+    try:
+        return sorted([str(k) for k in payload.keys()])
+    except Exception:
+        return []
+
+
 def _group_members(group_data: Dict[str, Any]) -> Set[str]:
     members = group_data.get("careGiverUserIds") or group_data.get("caregiverUserIds") or []
     if not isinstance(members, list):
@@ -237,6 +325,26 @@ def _topic_option_from_residence(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _topic_option_from_residence_stats(doc_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
+    residence_id = _as_str(row.get("residenceId"), doc_id)
+    era = _as_str(row.get("era"))
+    location = _as_str(row.get("location"))
+    detail = _as_str(row.get("detail"))
+    label = " ".join([v for v in [era, location] if v]).strip() or residence_id
+    return {
+        "topicType": "residence",
+        "topicId": residence_id,
+        "label": label,
+        "question": "",
+        "residencePayload": {
+            "residenceId": residence_id,
+            "era": era,
+            "location": location,
+            "detail": detail,
+        },
+    }
+
+
 def _topic_option_from_meaning(doc_id: str, row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "topicType": "meaning",
@@ -264,6 +372,90 @@ def _normalize_my_review(review_id: str, review_data: Dict[str, Any]) -> Dict[st
     }
 
 
+def _legacy_review_view_fields(row: Dict[str, Any]) -> Dict[str, Any]:
+    comment = _as_str(row.get("comment"))
+    call_memo = _as_str(row.get("callMemo"))
+    human_summary = _as_str(row.get("humanSummary")) or call_memo
+    mood = _as_str(row.get("mood")) or _as_str(row.get("emotionWord"))
+    human_keywords = _as_list_str(row.get("humanKeywords")) or _as_list_str(row.get("mentionedResidences"))
+    return {
+        "writerNameSnapshot": _as_str(row.get("writerNameSnapshot")),
+        "humanSummary": human_summary,
+        "humanKeywords": human_keywords,
+        "mood": mood,
+        "comment": comment or call_memo,
+    }
+
+
+@csrf_exempt
+def reviews_config(request):
+    started_at = timezone.now()
+    request_id = _request_id(request)
+    uid = _firebase_uid(request) or ""
+    status_code = 200
+    call_id = ""
+    group_id = ""
+
+    try:
+        logger.info("[REVIEWS/CONFIG] start requestId=%s uid=%s", request_id, uid)
+        invalid_method = _validate_method(request, "GET")
+        if invalid_method:
+            status_code = invalid_method.status_code
+            return invalid_method
+        if not uid:
+            status_code = 401
+            return _err(401, "unauthorized", "Authentication required.")
+
+        visible_date = _get_restricted_questions_visible_date_cached()
+        logger.info(
+            "[REVIEWS/CONFIG] requestId=%s uid=%s config_date=%s",
+            request_id,
+            uid,
+            visible_date or "",
+        )
+        status_code = 200
+        if visible_date:
+            return JsonResponse({"restrictedQuestionsVisibleDateEt": visible_date})
+        return JsonResponse({})
+    except Exception as exc:
+        logger.exception("[REVIEWS/CONFIG] failed: requestId=%s error=%s", request_id, exc)
+        status_code = 500
+        return _err(500, "internal_error", "Internal server error.")
+    finally:
+        _log_result("REVIEWS/CONFIG", request_id, uid, group_id=group_id, call_id=call_id, started_at=started_at, status=status_code)
+
+
+@csrf_exempt
+def reviews_config_invalidate_cache(request):
+    started_at = timezone.now()
+    request_id = _request_id(request)
+    uid = _firebase_uid(request) or ""
+    status_code = 200
+    call_id = ""
+    group_id = ""
+
+    try:
+        logger.info("[REVIEWS/CONFIG/INVALIDATE] start requestId=%s uid=%s", request_id, uid)
+        invalid_method = _validate_method(request, "POST")
+        if invalid_method:
+            status_code = invalid_method.status_code
+            return invalid_method
+        if not uid:
+            status_code = 401
+            return _err(401, "unauthorized", "Authentication required.")
+
+        _invalidate_reviews_config_cache()
+        logger.info("[REVIEWS/CONFIG/INVALIDATE] done requestId=%s uid=%s", request_id, uid)
+        status_code = 200
+        return _ok({"cacheInvalidated": True})
+    except Exception as exc:
+        logger.exception("[REVIEWS/CONFIG/INVALIDATE] failed: requestId=%s error=%s", request_id, exc)
+        status_code = 500
+        return _err(500, "internal_error", "Internal server error.")
+    finally:
+        _log_result("REVIEWS/CONFIG/INVALIDATE", request_id, uid, group_id=group_id, call_id=call_id, started_at=started_at, status=status_code)
+
+
 @csrf_exempt
 def reviews_feed(request):
     started_at = timezone.now()
@@ -274,6 +466,14 @@ def reviews_feed(request):
     status_code = 200
 
     try:
+        logger.info(
+            "[REVIEWS/FEED] start requestId=%s uid=%s group_id=%s limit=%s cursor=%s",
+            request_id,
+            uid,
+            group_id,
+            request.GET.get("limit"),
+            _as_str(request.GET.get("cursor")),
+        )
         invalid_method = _validate_method(request, "GET")
         if invalid_method:
             status_code = invalid_method.status_code
@@ -298,9 +498,11 @@ def reviews_feed(request):
 
         group_snap = db.collection("groups").document(group_id).get()
         if not group_snap.exists:
+            logger.warning("[REVIEWS/FEED] group not found requestId=%s group_id=%s", request_id, group_id)
             status_code = 404
             return _err(404, "group_not_found", "Group not found.")
         if uid not in _group_members(group_snap.to_dict() or {}):
+            logger.warning("[REVIEWS/FEED] forbidden requestId=%s uid=%s group_id=%s", request_id, uid, group_id)
             status_code = 403
             return _err(403, "forbidden", "No permission for this group.")
 
@@ -328,6 +530,13 @@ def reviews_feed(request):
         call_docs = list(query.limit(limit + 1).stream())
         page_calls = call_docs[:limit]
         has_more = len(call_docs) > limit
+        logger.info(
+            "[REVIEWS/FEED] fetched calls requestId=%s total=%s page=%s has_more=%s",
+            request_id,
+            len(call_docs),
+            len(page_calls),
+            has_more,
+        )
 
         items: List[Dict[str, Any]] = []
         for call_doc in page_calls:
@@ -346,17 +555,14 @@ def reviews_feed(request):
                         "reviewId": _as_str(review_doc.id),
                         "callId": _as_str(row.get("callId"), this_call_id),
                         "writerUserId": _as_str(row.get("writerUserId")),
-                        "writerNameSnapshot": _as_str(row.get("writerNameSnapshot")),
                         "mentionedResidences": _as_list_str(row.get("mentionedResidences")),
-                        "humanSummary": _as_str(row.get("humanSummary")),
-                        "humanKeywords": _as_list_str(row.get("humanKeywords")),
-                        "mood": _as_str(row.get("mood")),
-                        "comment": _as_str(row.get("comment")),
+                        **_legacy_review_view_fields(row),
                         "createdAt": _iso_or_empty(row.get("createdAt")),
                     }
                 )
 
         items.sort(key=lambda x: _to_dt(x.get("createdAt")), reverse=True)
+        logger.info("[REVIEWS/FEED] built items requestId=%s items=%s", request_id, len(items))
         next_cursor = ""
         if has_more and page_calls:
             last_call_data = page_calls[-1].to_dict() or {}
@@ -382,6 +588,12 @@ def reviews_context(request):
     status_code = 200
 
     try:
+        logger.info(
+            "[REVIEWS/CONTEXT] start requestId=%s uid=%s call_id=%s",
+            request_id,
+            uid,
+            call_id,
+        )
         invalid_method = _validate_method(request, "GET")
         if invalid_method:
             status_code = invalid_method.status_code
@@ -400,6 +612,13 @@ def reviews_context(request):
 
         call_ref, call_data, group_id, auth_error = _load_call_and_authorize(db, call_id, uid)
         if auth_error:
+            logger.warning(
+                "[REVIEWS/CONTEXT] auth_error requestId=%s uid=%s call_id=%s status=%s",
+                request_id,
+                uid,
+                call_id,
+                auth_error.status_code,
+            )
             status_code = auth_error.status_code
             return auth_error
 
@@ -410,10 +629,42 @@ def reviews_context(request):
             receiver_doc = db.collection("receivers").document(receiver_id).get()
             receiver_data = receiver_doc.to_dict() if receiver_doc.exists else {}
             major_residences = receiver_data.get("majorResidences")
+            residence_seen: Set[str] = set()
             if isinstance(major_residences, list):
                 for row in major_residences:
                     if isinstance(row, dict):
-                        topic_options.append(_topic_option_from_residence(row))
+                        option = _topic_option_from_residence(row)
+                        topic_id = _as_str(option.get("topicId"))
+                        if topic_id and topic_id not in residence_seen:
+                            topic_options.append(option)
+                            residence_seen.add(topic_id)
+            logger.info(
+                "[REVIEWS/CONTEXT] majorResidences parsed requestId=%s receiver_id=%s count=%s",
+                request_id,
+                receiver_id,
+                len(residence_seen),
+            )
+
+            # Fallback for old data shape where only residence_stats exists.
+            if not residence_seen:
+                residence_docs = list(
+                    db.collection("receivers")
+                    .document(receiver_id)
+                    .collection("residence_stats")
+                    .stream()
+                )
+                for doc in residence_docs:
+                    option = _topic_option_from_residence_stats(doc.id, doc.to_dict() or {})
+                    topic_id = _as_str(option.get("topicId"))
+                    if topic_id and topic_id not in residence_seen:
+                        topic_options.append(option)
+                        residence_seen.add(topic_id)
+                logger.info(
+                    "[REVIEWS/CONTEXT] residence_stats fallback requestId=%s receiver_id=%s count=%s",
+                    request_id,
+                    receiver_id,
+                    len(residence_seen),
+                )
 
             try:
                 meaning_docs = list(
@@ -428,13 +679,43 @@ def reviews_context(request):
                 meaning_docs = list(
                     db.collection("receivers").document(receiver_id).collection("meaning_stats").stream()
                 )
+                # old docs might not have `active`; treat missing as active.
                 meaning_docs = [
-                    d for d in meaning_docs if bool((d.to_dict() or {}).get("active", False))
+                    d for d in meaning_docs if bool((d.to_dict() or {}).get("active", True))
                 ]
                 meaning_docs.sort(key=lambda d: _as_int((d.to_dict() or {}).get("order"), 0))
+                logger.warning(
+                    "[REVIEWS/CONTEXT] meaning query fallback requestId=%s receiver_id=%s count=%s",
+                    request_id,
+                    receiver_id,
+                    len(meaning_docs),
+                )
+
+            # If query with active==true returns empty on old schema, retry broad read.
+            if not meaning_docs:
+                fallback_docs = list(
+                    db.collection("receivers").document(receiver_id).collection("meaning_stats").stream()
+                )
+                fallback_docs = [
+                    d for d in fallback_docs if bool((d.to_dict() or {}).get("active", True))
+                ]
+                fallback_docs.sort(key=lambda d: _as_int((d.to_dict() or {}).get("order"), 0))
+                meaning_docs = fallback_docs
+                logger.warning(
+                    "[REVIEWS/CONTEXT] meaning broad fallback requestId=%s receiver_id=%s count=%s",
+                    request_id,
+                    receiver_id,
+                    len(meaning_docs),
+                )
 
             for doc in meaning_docs:
                 topic_options.append(_topic_option_from_meaning(doc.id, doc.to_dict() or {}))
+            logger.info(
+                "[REVIEWS/CONTEXT] meaning parsed requestId=%s receiver_id=%s count=%s",
+                request_id,
+                receiver_id,
+                len(meaning_docs),
+            )
 
         status_code = 200
         return _ok(
@@ -465,6 +746,12 @@ def reviews_my(request):
     status_code = 200
 
     try:
+        logger.info(
+            "[REVIEWS/MY] start requestId=%s uid=%s call_id=%s",
+            request_id,
+            uid,
+            call_id,
+        )
         invalid_method = _validate_method(request, "GET")
         if invalid_method:
             status_code = invalid_method.status_code
@@ -483,16 +770,25 @@ def reviews_my(request):
 
         call_ref, call_data, group_id, auth_error = _load_call_and_authorize(db, call_id, uid)
         if auth_error:
+            logger.warning(
+                "[REVIEWS/MY] auth_error requestId=%s uid=%s call_id=%s status=%s",
+                request_id,
+                uid,
+                call_id,
+                auth_error.status_code,
+            )
             status_code = auth_error.status_code
             return auth_error
         _ = call_data
 
         review_doc = _find_my_review_doc(call_ref.collection("reviews"), uid)
         if not review_doc:
+            logger.warning("[REVIEWS/MY] review not found requestId=%s uid=%s call_id=%s", request_id, uid, call_id)
             status_code = 404
             return _err(404, "review_not_found", "Review not found.")
 
         review_data = review_doc.to_dict() or {}
+        logger.info("[REVIEWS/MY] review found requestId=%s review_id=%s", request_id, review_doc.id)
         status_code = 200
         return _ok(_normalize_my_review(review_doc.id, review_data))
     except Exception as exc:
@@ -548,9 +844,14 @@ def _selected_topic_ref(payload: Dict[str, Any]) -> Tuple[str, str]:
 
 
 def _decrement_counter(transaction, ref, field_name: str):
-    snap = ref.get(transaction=transaction)
-    current = _as_int((snap.to_dict() or {}).get(field_name), 0) if snap.exists else 0
-    transaction.set(ref, {field_name: max(current - 1, 0), "updatedAt": timezone.now()}, merge=True)
+    from firebase_admin import firestore as fb_firestore
+
+    # Firestore transactions disallow read-after-write. Use atomic decrement.
+    transaction.set(
+        ref,
+        {field_name: fb_firestore.Increment(-1), "updatedAt": timezone.now()},
+        merge=True,
+    )
 
 
 @csrf_exempt
@@ -563,6 +864,7 @@ def reviews_upsert(request):
     status_code = 200
 
     try:
+        logger.info("[REVIEWS/UPSERT] start requestId=%s uid=%s", request_id, uid)
         invalid_method = _validate_method(request, "POST")
         if invalid_method:
             status_code = invalid_method.status_code
@@ -575,13 +877,33 @@ def reviews_upsert(request):
         if parse_error:
             status_code = parse_error.status_code
             return parse_error
+        logger.info("[REVIEWS/UPSERT] payload keys requestId=%s keys=%s", request_id, _safe_keys(data or {}))
 
         normalized, validation_error = _validate_upsert_payload(data or {})
         if validation_error:
             status_code = validation_error.status_code
             return validation_error
 
+        if not _is_restricted_questions_visible_today_et():
+            for key in RESTRICTED_QUESTION_FIELDS:
+                if key == "listeningScore":
+                    normalized[key] = 0
+                else:
+                    normalized[key] = ""
+            logger.info(
+                "[REVIEWS/UPSERT] restricted fields masked by date gate requestId=%s uid=%s",
+                request_id,
+                uid,
+            )
+
         call_id = normalized["callId"]
+        logger.info(
+            "[REVIEWS/UPSERT] normalized requestId=%s call_id=%s selectedTopicType=%s selectedTopicId=%s",
+            request_id,
+            call_id,
+            normalized.get("selectedTopicType"),
+            normalized.get("selectedTopicId"),
+        )
         db = firestore_service.db
         if not db:
             status_code = 500
@@ -598,6 +920,7 @@ def reviews_upsert(request):
 
             call_snap = call_ref.get(transaction=transaction)
             if not call_snap.exists:
+                logger.warning("[REVIEWS/UPSERT] call not found requestId=%s call_id=%s", request_id, call_id)
                 return {"ok": False, "error": "call_not_found"}
             call_data = call_snap.to_dict() or {}
             group_id = _as_str(call_data.get("groupId"))
@@ -607,8 +930,10 @@ def reviews_upsert(request):
 
             group_snap = db.collection("groups").document(group_id).get(transaction=transaction)
             if not group_snap.exists:
+                logger.warning("[REVIEWS/UPSERT] group not found requestId=%s group_id=%s", request_id, group_id)
                 return {"ok": False, "error": "group_not_found"}
             if uid not in _group_members(group_snap.to_dict() or {}):
+                logger.warning("[REVIEWS/UPSERT] forbidden requestId=%s uid=%s group_id=%s", request_id, uid, group_id)
                 return {"ok": False, "error": "forbidden"}
 
             reviews_ref = call_ref.collection("reviews")
@@ -618,9 +943,21 @@ def reviews_upsert(request):
             if existing_review_id:
                 existing_snap = reviews_ref.document(existing_review_id).get(transaction=transaction)
                 if not existing_snap.exists:
+                    logger.warning(
+                        "[REVIEWS/UPSERT] existing review not found requestId=%s existingReviewId=%s",
+                        request_id,
+                        existing_review_id,
+                    )
                     return {"ok": False, "error": "review_not_found"}
                 existing_data = existing_snap.to_dict() or {}
                 if _as_str(existing_data.get("writerUserId")) != uid:
+                    logger.warning(
+                        "[REVIEWS/UPSERT] forbidden review owner requestId=%s review_id=%s owner=%s uid=%s",
+                        request_id,
+                        existing_review_id,
+                        _as_str(existing_data.get("writerUserId")),
+                        uid,
+                    )
                     return {"ok": False, "error": "forbidden"}
                 review_ref = reviews_ref.document(existing_review_id)
                 review_id = existing_review_id
@@ -636,6 +973,7 @@ def reviews_upsert(request):
                     review_id = str(uuid.uuid4())
                     review_ref = reviews_ref.document(review_id)
                     mode = "create"
+            logger.info("[REVIEWS/UPSERT] mode decided requestId=%s mode=%s review_id=%s", request_id, mode, review_id)
 
             existing_data = existing_snap.to_dict() if existing_snap and existing_snap.exists else {}
             prev_topic_type, prev_topic_id = _selected_topic_ref(existing_data or {})
@@ -644,6 +982,12 @@ def reviews_upsert(request):
             review_doc = {
                 "callId": call_id,
                 "writerUserId": uid,
+                # Legacy feed compatibility fields are mirrored until old clients are fully retired.
+                "writerNameSnapshot": _as_str(existing_data.get("writerNameSnapshot")),
+                "humanSummary": normalized["callMemo"],
+                "humanKeywords": normalized["mentionedResidences"],
+                "mood": normalized["emotionWord"],
+                "comment": normalized["callMemo"],
                 "listeningScore": normalized["listeningScore"],
                 "notFullyHeardMoment": normalized["notFullyHeardMoment"],
                 "nextSessionTry": normalized["nextSessionTry"],
@@ -685,6 +1029,12 @@ def reviews_upsert(request):
                     prev_col = "residence_stats" if prev_topic_type == "residence" else "meaning_stats"
                     prev_ref = receiver_ref.collection(prev_col).document(prev_topic_id)
                     _decrement_counter(transaction, prev_ref, "totalCalls")
+                    logger.info(
+                        "[REVIEWS/UPSERT] decremented previous topic requestId=%s type=%s topic_id=%s",
+                        request_id,
+                        prev_topic_type,
+                        prev_topic_id,
+                    )
                 if next_topic_type and next_topic_id and (prev_topic_type != next_topic_type or prev_topic_id != next_topic_id):
                     next_col = "residence_stats" if next_topic_type == "residence" else "meaning_stats"
                     next_ref = receiver_ref.collection(next_col).document(next_topic_id)
@@ -692,6 +1042,12 @@ def reviews_upsert(request):
                         next_ref,
                         {"totalCalls": fb_firestore.Increment(1), "lastCallAt": now, "updatedAt": now},
                         merge=True,
+                    )
+                    logger.info(
+                        "[REVIEWS/UPSERT] incremented new topic requestId=%s type=%s topic_id=%s",
+                        request_id,
+                        next_topic_type,
+                        next_topic_id,
                     )
 
             log_ref = call_ref.collection("write_logs").document(str(uuid.uuid4()))
@@ -712,6 +1068,7 @@ def reviews_upsert(request):
             return {"ok": True, "reviewId": review_id, "mode": mode}
 
         result = _txn(db.transaction())
+        logger.info("[REVIEWS/UPSERT] txn result requestId=%s result=%s", request_id, result)
         if not result.get("ok"):
             error = result.get("error")
             if error == "call_not_found":

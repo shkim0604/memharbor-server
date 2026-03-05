@@ -1,0 +1,1000 @@
+{
+  "root": {
+    "users": {
+      "doc_count": 8,
+      "sample_ids": [
+        "5tIJ9f6E5TMOVgXsTSB9s9mbtC42",
+        "ATqLwjAieXe0hsBmsFXDAiijVGf1",
+        "DTqhSs4VRaaVmoSgRopnMyShem73",
+        "nRuBC3IrdAe4lM2XxjJHHx738FI3",
+        "user_alice"
+      ],
+      "fields": {
+        "apnsToken": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "apnsTokenUpdatedAt": {
+          "count": 1,
+          "types": {
+            "str": 1
+          }
+        },
+        "createdAt": {
+          "count": 8,
+          "types": {
+            "str": 4,
+            "DatetimeWithNanoseconds": 4
+          }
+        },
+        "deletionRequestedAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "deletionStatus": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "email": {
+          "count": 8,
+          "types": {
+            "str": 8
+          }
+        },
+        "fcmToken": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "fcmTokenUpdatedAt": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "groupIds": {
+          "count": 8,
+          "types": {
+            "list": 8
+          }
+        },
+        "introMessage": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "lastActivityAt": {
+          "count": 4,
+          "types": {
+            "DatetimeWithNanoseconds": 1,
+            "str": 3
+          }
+        },
+        "name": {
+          "count": 8,
+          "types": {
+            "str": 8
+          }
+        },
+        "platform": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "profileImage": {
+          "count": 8,
+          "types": {
+            "str": 8
+          }
+        },
+        "scheduledDeletionAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "tokensUpdatedAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "uid": {
+          "count": 8,
+          "types": {
+            "str": 8
+          }
+        },
+        "voipToken": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        }
+      }
+    },
+    "groups": {
+      "doc_count": 2,
+      "sample_ids": [
+        "group_1",
+        "group_2"
+      ],
+      "fields": {
+        "careGiverUserIds": {
+          "count": 2,
+          "types": {
+            "list": 2
+          }
+        },
+        "groupId": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "name": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "receiverId": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "stats": {
+          "count": 1,
+          "types": {
+            "map": 1
+          }
+        }
+      }
+    },
+    "receivers": {
+      "doc_count": 2,
+      "sample_ids": [
+        "5tIJ9f6E5TMOVgXsTSB9s9mbtC42",
+        "receiver_2"
+      ],
+      "fields": {
+        "groupId": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "majorResidences": {
+          "count": 2,
+          "types": {
+            "list": 2
+          }
+        },
+        "name": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "profileImage": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "receiverId": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        }
+      }
+    },
+    "calls": {
+      "doc_count": 273,
+      "sample_ids": [
+        "013bf618-1197-4b4d-9282-51929d7e991b",
+        "04181e9e-c35b-4a76-aab4-2441eabb028a",
+        "047870e8-33f1-45a7-9f1f-6b470f14ead4",
+        "05a686d6-852d-447c-a268-c7993c151cf4",
+        "06049682-7cfa-48bb-904f-dfef8ff7df11"
+      ],
+      "fields": {
+        "aiSummary": {
+          "count": 262,
+          "types": {
+            "str": 262
+          }
+        },
+        "answeredAt": {
+          "count": 262,
+          "types": {
+            "null": 129,
+            "DatetimeWithNanoseconds": 133
+          }
+        },
+        "callId": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "caregiverUserId": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "channelId": {
+          "count": 11,
+          "types": {
+            "str": 11
+          }
+        },
+        "channelName": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "createdAt": {
+          "count": 262,
+          "types": {
+            "DatetimeWithNanoseconds": 262
+          }
+        },
+        "durationSec": {
+          "count": 273,
+          "types": {
+            "null": 154,
+            "int": 119
+          }
+        },
+        "endReason": {
+          "count": 2,
+          "types": {
+            "str": 2
+          }
+        },
+        "endedAt": {
+          "count": 273,
+          "types": {
+            "DatetimeWithNanoseconds": 248,
+            "null": 25
+          }
+        },
+        "giverNameSnapshot": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "groupId": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "groupNameSnapshot": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "humanKeywords": {
+          "count": 262,
+          "types": {
+            "list": 262
+          }
+        },
+        "humanNotes": {
+          "count": 262,
+          "types": {
+            "str": 262
+          }
+        },
+        "humanSummary": {
+          "count": 262,
+          "types": {
+            "str": 262
+          }
+        },
+        "isConfirmed": {
+          "count": 11,
+          "types": {
+            "bool": 11
+          }
+        },
+        "lastReviewAt": {
+          "count": 273,
+          "types": {
+            "null": 253,
+            "DatetimeWithNanoseconds": 20
+          }
+        },
+        "mentionedResidences": {
+          "count": 4,
+          "types": {
+            "list": 4
+          }
+        },
+        "pushPlatform": {
+          "count": 185,
+          "types": {
+            "str": 185
+          }
+        },
+        "pushReservedAt": {
+          "count": 186,
+          "types": {
+            "DatetimeWithNanoseconds": 186
+          }
+        },
+        "pushSent": {
+          "count": 193,
+          "types": {
+            "bool": 193
+          }
+        },
+        "receiverId": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "receiverNameSnapshot": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "recordingDurationMs": {
+          "count": 72,
+          "types": {
+            "int": 72
+          }
+        },
+        "recordingFilename": {
+          "count": 72,
+          "types": {
+            "str": 72
+          }
+        },
+        "recordingFormat": {
+          "count": 72,
+          "types": {
+            "str": 72
+          }
+        },
+        "recordingSavedAt": {
+          "count": 72,
+          "types": {
+            "DatetimeWithNanoseconds": 72
+          }
+        },
+        "reviewCount": {
+          "count": 273,
+          "types": {
+            "int": 273
+          }
+        },
+        "selectedMeaningId": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedResidenceId": {
+          "count": 4,
+          "types": {
+            "str": 3,
+            "null": 1
+          }
+        },
+        "selectedTopicId": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedTopicLabel": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "selectedTopicQuestion": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "selectedTopicType": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "startedAt": {
+          "count": 11,
+          "types": {
+            "DatetimeWithNanoseconds": 11
+          }
+        },
+        "status": {
+          "count": 273,
+          "types": {
+            "str": 273
+          }
+        },
+        "updatedAt": {
+          "count": 185,
+          "types": {
+            "DatetimeWithNanoseconds": 185
+          }
+        }
+      }
+    },
+    "meta": {
+      "doc_count": 0,
+      "sample_ids": [],
+      "fields": {}
+    },
+    "userDeletionRequests": {
+      "doc_count": 3,
+      "sample_ids": [
+        "5tIJ9f6E5TMOVgXsTSB9s9mbtC42",
+        "DTqhSs4VRaaVmoSgRopnMyShem73",
+        "nRuBC3IrdAe4lM2XxjJHHx738FI3"
+      ],
+      "fields": {
+        "email": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "emailSent": {
+          "count": 3,
+          "types": {
+            "bool": 3
+          }
+        },
+        "emailSentAt": {
+          "count": 3,
+          "types": {
+            "str": 2,
+            "null": 1
+          }
+        },
+        "notifyEmail": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "requestedAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "scheduledDeleteAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "status": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "tokenUid": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "uid": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "updatedAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        }
+      }
+    },
+    "recordings": {
+      "doc_count": 0,
+      "sample_ids": [],
+      "fields": {}
+    }
+  },
+  "sub": {
+    "calls/reviews": {
+      "doc_count": 20,
+      "sample_ids": [
+        "ZwX3AINgwEpaPYBXzAh1",
+        "qD2OXADEM3oGCt8tgW2R",
+        "45727f53-9e00-45e5-9d4b-1e2d8f449cde",
+        "J3PgRXBpWfZCRR7gxJn7",
+        "AGiXGQLP4AXIoMlMavKR"
+      ],
+      "fields": {
+        "callId": {
+          "count": 20,
+          "types": {
+            "str": 20
+          }
+        },
+        "callMemo": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "comment": {
+          "count": 18,
+          "types": {
+            "str": 18
+          }
+        },
+        "createdAt": {
+          "count": 20,
+          "types": {
+            "DatetimeWithNanoseconds": 20
+          }
+        },
+        "emotionSource": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "emotionWord": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "firstWriteDurationSec": {
+          "count": 4,
+          "types": {
+            "int": 4
+          }
+        },
+        "firstWriteStartedAtClient": {
+          "count": 4,
+          "types": {
+            "DatetimeWithNanoseconds": 4
+          }
+        },
+        "humanKeywords": {
+          "count": 18,
+          "types": {
+            "list": 18
+          }
+        },
+        "humanSummary": {
+          "count": 18,
+          "types": {
+            "str": 18
+          }
+        },
+        "lastWriteDurationSec": {
+          "count": 4,
+          "types": {
+            "int": 4
+          }
+        },
+        "lastWriteStartedAtClient": {
+          "count": 4,
+          "types": {
+            "DatetimeWithNanoseconds": 4
+          }
+        },
+        "lastWriteType": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "listeningScore": {
+          "count": 10,
+          "types": {
+            "int": 10
+          }
+        },
+        "mentionedResidences": {
+          "count": 20,
+          "types": {
+            "list": 20
+          }
+        },
+        "mood": {
+          "count": 18,
+          "types": {
+            "str": 18
+          }
+        },
+        "nextSessionTry": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "notFullyHeardMoment": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "requiredQuestionDurationSec": {
+          "count": 5,
+          "types": {
+            "int": 5
+          }
+        },
+        "requiredStepOpenedAt": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "selectedMeaningId": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedResidenceId": {
+          "count": 7,
+          "types": {
+            "str": 5,
+            "null": 2
+          }
+        },
+        "selectedTopicId": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedTopicLabel": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedTopicQuestion": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "selectedTopicType": {
+          "count": 4,
+          "types": {
+            "str": 4
+          }
+        },
+        "smallReset": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "updatedAt": {
+          "count": 6,
+          "types": {
+            "DatetimeWithNanoseconds": 6
+          }
+        },
+        "writerNameSnapshot": {
+          "count": 18,
+          "types": {
+            "str": 18
+          }
+        },
+        "writerUserId": {
+          "count": 20,
+          "types": {
+            "str": 20
+          }
+        }
+      }
+    },
+    "calls/write_logs": {
+      "doc_count": 3,
+      "sample_ids": [
+        "5472b819-a34a-4a93-9b3c-c44a1a2f4c0d",
+        "a241e0db-ee7e-4730-a1ce-46663dbb74f0",
+        "ab7c36bd-02fc-4fb7-9c50-dbf095f6bb2a"
+      ],
+      "fields": {
+        "callId": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "createdAt": {
+          "count": 3,
+          "types": {
+            "DatetimeWithNanoseconds": 3
+          }
+        },
+        "groupId": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "mode": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "requestId": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "reviewId": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        },
+        "uid": {
+          "count": 3,
+          "types": {
+            "str": 3
+          }
+        }
+      }
+    },
+    "receivers/residence_stats": {
+      "doc_count": 10,
+      "sample_ids": [
+        "res_1950s_andong",
+        "res_1960s_jongno",
+        "res_1975s_gangnam",
+        "res_1990s_bundang",
+        "res_2010s_seocho"
+      ],
+      "fields": {
+        "aiSummary": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "detail": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "era": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "groupId": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "humanComments": {
+          "count": 10,
+          "types": {
+            "list": 10
+          }
+        },
+        "keywords": {
+          "count": 10,
+          "types": {
+            "list": 10
+          }
+        },
+        "lastCallAt": {
+          "count": 10,
+          "types": {
+            "DatetimeWithNanoseconds": 10
+          }
+        },
+        "location": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "receiverId": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "residenceId": {
+          "count": 10,
+          "types": {
+            "str": 10
+          }
+        },
+        "totalCalls": {
+          "count": 7,
+          "types": {
+            "int": 7
+          }
+        },
+        "updatedAt": {
+          "count": 1,
+          "types": {
+            "DatetimeWithNanoseconds": 1
+          }
+        }
+      }
+    },
+    "receivers/meaning_stats": {
+      "doc_count": 5,
+      "sample_ids": [
+        "meaning_church_memory",
+        "meaning_influential_person",
+        "meaning_legacy_event",
+        "meaning_rewind_moment",
+        "meaning_work_memory"
+      ],
+      "fields": {
+        "active": {
+          "count": 5,
+          "types": {
+            "bool": 5
+          }
+        },
+        "aiSummary": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "createdAt": {
+          "count": 5,
+          "types": {
+            "DatetimeWithNanoseconds": 5
+          }
+        },
+        "exampleQuestions": {
+          "count": 5,
+          "types": {
+            "list": 5
+          }
+        },
+        "groupId": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "humanComments": {
+          "count": 5,
+          "types": {
+            "list": 5
+          }
+        },
+        "interviewGuide": {
+          "count": 5,
+          "types": {
+            "list": 5
+          }
+        },
+        "isFixedQuestion": {
+          "count": 5,
+          "types": {
+            "bool": 5
+          }
+        },
+        "keywords": {
+          "count": 5,
+          "types": {
+            "list": 5
+          }
+        },
+        "lastCallAt": {
+          "count": 5,
+          "types": {
+            "DatetimeWithNanoseconds": 3,
+            "null": 2
+          }
+        },
+        "lastReviewAt": {
+          "count": 5,
+          "types": {
+            "null": 5
+          }
+        },
+        "meaningId": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "order": {
+          "count": 5,
+          "types": {
+            "int": 5
+          }
+        },
+        "question": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "receiverId": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "title": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "topicType": {
+          "count": 5,
+          "types": {
+            "str": 5
+          }
+        },
+        "totalCalls": {
+          "count": 5,
+          "types": {
+            "int": 5
+          }
+        },
+        "totalReviews": {
+          "count": 5,
+          "types": {
+            "int": 5
+          }
+        },
+        "updatedAt": {
+          "count": 5,
+          "types": {
+            "DatetimeWithNanoseconds": 5
+          }
+        },
+        "version": {
+          "count": 5,
+          "types": {
+            "int": 5
+          }
+        }
+      }
+    }
+  }
+}
